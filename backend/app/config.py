@@ -1,0 +1,76 @@
+"""All tunable knobs in one place.
+
+Renaming the product later ("Openhouse" -> something else, "Room" -> something
+else) should be a one-line env change: APP_NAME, ROOM_WORD, APP_URL.
+"""
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # ---- Naming (see README naming note) ----
+    APP_NAME: str = "Openhouse"
+    ROOM_WORD: str = "Room"
+    APP_URL: str = "http://localhost:3000"
+
+    # ---- Infra ----
+    # Real deployments point this at Postgres (e.g.
+    # postgresql+asyncpg://user:pass@host/db). Tests override it to an
+    # aiosqlite URL so the suite doesn't need a running Postgres server.
+    DATABASE_URL: str = "postgresql+asyncpg://openhouse:openhouse@localhost:5432/openhouse"
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    S3_ENDPOINT_URL: str | None = "http://localhost:9000"
+    S3_BUCKET: str = "openhouse-files"
+    S3_ACCESS_KEY: str = "minioadmin"
+    S3_SECRET_KEY: str = "minioadmin"
+    S3_REGION: str = "us-east-1"
+
+    ADMIN_TOKEN: str = "change-me"
+
+    # ---- Room codes / invites / recovery ----
+    ROOM_CODE_ALPHABET: str = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+    ROOM_CODE_LENGTH: int = 5
+    RECOVERY_CODE_LENGTH: int = 12
+    INVITE_TTL_SECONDS: int = 15 * 60
+
+    # ---- Content limits ----
+    ROOM_NAME_MIN: int = 3
+    ROOM_NAME_MAX: int = 40
+    DISPLAY_NAME_MIN: int = 1
+    DISPLAY_NAME_MAX: int = 24
+    MESSAGE_MIN: int = 1
+    MESSAGE_MAX: int = 2000
+    MAX_EXTRA_CHANNELS: int = 10
+    MAX_PINS: int = 3
+    HISTORY_PAGE_SIZE: int = 50
+
+    MAX_FILE_BYTES: int = 10 * 1024 * 1024
+    ALLOWED_FILE_EXTENSIONS: tuple = (
+        "png", "jpg", "jpeg", "gif", "webp",
+        "pdf", "doc", "docx", "txt", "odt",
+        "zip",
+    )
+
+    # ---- Rate limits ----
+    MESSAGE_RATE_LIMIT: int = 10
+    MESSAGE_RATE_WINDOW_SECONDS: int = 10
+    JOIN_RATE_LIMIT: int = 10
+    JOIN_RATE_WINDOW_SECONDS: int = 60
+    RECOVERY_RATE_LIMIT: int = 5
+    RECOVERY_RATE_WINDOW_SECONDS: int = 60
+    UPLOAD_RATE_LIMIT: int = 5
+    UPLOAD_RATE_WINDOW_SECONDS: int = 60
+
+    # ---- Cleanup ----
+    DELETED_ROOM_CLEANUP_HOURS: int = 24
+    REPORT_RETENTION_DAYS: int = 30
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
