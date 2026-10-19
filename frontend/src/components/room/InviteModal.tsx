@@ -1,0 +1,63 @@
+"use client";
+
+import { useState } from "react";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
+import { api } from "@/lib/api";
+import { ApiError } from "@/lib/types";
+
+export function InviteModal({
+  open,
+  onClose,
+  roomId,
+  token,
+}: {
+  open: boolean;
+  onClose: () => void;
+  roomId: string;
+  token: string;
+}) {
+  const [code, setCode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function createInvite() {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.createInvite(roomId, token);
+      setCode(result.code);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't create an invite.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleClose() {
+    setCode(null);
+    setError(null);
+    onClose();
+  }
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Invite someone">
+      {code ? (
+        <div className="flex flex-col items-center gap-2 text-center">
+          <div className="font-mono text-4xl font-bold tracking-widest">{code}</div>
+          <p className="text-sm text-muted">Valid for 15 minutes, one person.</p>
+          <Button className="mt-2 w-full" onClick={handleClose}>
+            Done
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <Button onClick={createInvite} disabled={loading}>
+            {loading ? "Creating…" : "Generate invite code"}
+          </Button>
+        </div>
+      )}
+    </Modal>
+  );
+}

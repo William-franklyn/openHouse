@@ -11,6 +11,7 @@ export interface RoomPublic {
   code: string;
   member_count: number;
   join_policy: JoinPolicy;
+  invite_by: InviteBy | null;
   is_active: boolean;
 }
 

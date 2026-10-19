@@ -161,6 +161,7 @@ def room_public(room: Room, member_count: int) -> dict:
         "code": room.code,
         "member_count": member_count,
         "join_policy": room.join_policy,
+        "invite_by": room.invite_by,
         "is_active": room.is_active(),
     }
 
