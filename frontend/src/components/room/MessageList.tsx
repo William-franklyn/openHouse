@@ -5,6 +5,12 @@ import { api } from "@/lib/api";
 import { getBlockedIds } from "@/lib/blocked";
 import { useRoomStore } from "@/lib/store";
 import { MessageItem } from "./MessageItem";
+import { MessageOut } from "@/lib/types";
+
+// A stable reference for "no messages yet" - `?? []` would allocate a new
+// array every render, which breaks useSyncExternalStore's snapshot
+// comparison (every render looks "changed") and causes an infinite loop.
+const EMPTY_MESSAGES: MessageOut[] = [];
 
 export function MessageList({
   roomId,
@@ -28,7 +34,7 @@ export function MessageList({
   const [loadingMore, setLoadingMore] = useState(false);
   const [exhausted, setExhausted] = useState(false);
 
-  const messages = useRoomStore((s) => s.messagesByChannel[channelId] ?? []);
+  const messages = useRoomStore((s) => s.messagesByChannel[channelId] ?? EMPTY_MESSAGES);
   const pinnedIds = useRoomStore((s) => s.pinnedIds);
   const myRole = useRoomStore((s) => s.myRole);
   const myMemberId = useRoomStore((s) => s.myMemberId);

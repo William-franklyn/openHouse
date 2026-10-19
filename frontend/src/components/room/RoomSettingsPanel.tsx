@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
 import { ApiError, JoinPolicy, RoomPublic } from "@/lib/types";
 import { DeleteRoomDialog } from "./DeleteRoomDialog";
@@ -99,33 +100,27 @@ export function RoomSettingsPanel({
   return (
     <Modal open={open} onClose={onClose} title="Room settings">
       <div className="flex flex-col gap-5">
-        <div>
-          <label className="text-sm font-medium">Who can join</label>
-          <select
-            value={joinPolicy}
-            onChange={(e) => savePolicy(e.target.value as JoinPolicy)}
-            disabled={saving}
-            className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
-          >
-            <option value="open">Open — anyone with the code</option>
-            <option value="approval">Approval — owner/mods approve each join</option>
-            <option value="invite_only">Invite only — needs a one-time invite code</option>
-          </select>
-        </div>
+        <Select
+          label="Who can join"
+          value={joinPolicy}
+          onChange={(e) => savePolicy(e.target.value as JoinPolicy)}
+          disabled={saving}
+        >
+          <option value="open">Open — anyone with the code</option>
+          <option value="approval">Approval — owner/mods approve each join</option>
+          <option value="invite_only">Invite only — needs a one-time invite code</option>
+        </Select>
 
         {joinPolicy === "invite_only" && (
-          <div>
-            <label className="text-sm font-medium">Who can create invites</label>
-            <select
-              value={inviteBy}
-              onChange={(e) => saveInviteBy(e.target.value as "admins" | "members")}
-              disabled={saving}
-              className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
-            >
-              <option value="admins">Owner + moderators only</option>
-              <option value="members">Any member</option>
-            </select>
-          </div>
+          <Select
+            label="Who can create invites"
+            value={inviteBy}
+            onChange={(e) => saveInviteBy(e.target.value as "admins" | "members")}
+            disabled={saving}
+          >
+            <option value="admins">Owner + moderators only</option>
+            <option value="members">Any member</option>
+          </Select>
         )}
 
         <div>

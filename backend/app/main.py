@@ -7,6 +7,7 @@ from datetime import datetime
 
 import redis.asyncio as redis_asyncio
 from fastapi import Depends, FastAPI, Header, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -56,6 +57,21 @@ def create_app(
     app.state.redis = redis_client
     app.state.storage = storage
     app.state.hub = hub
+
+    # The frontend is a separate origin (its own Vercel/localhost domain),
+    # so every REST call from it is cross-origin - without this, the
+    # browser's CORS preflight (OPTIONS) gets a 405 from FastAPI's router
+    # (no handler for it) and blocks the real request before it's even
+    # sent. allow_origins intentionally doesn't include "*": Bearer tokens
+    # go in a header we control, not a cookie, so there's no CSRF-via-
+    # wildcard-origin concern, but there's no reason to be looser than
+    # "the configured frontend, plus localhost for dev" either.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list({settings.APP_URL, "http://localhost:3000", "http://127.0.0.1:3000"}),
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(request: Request, exc: DomainError):
