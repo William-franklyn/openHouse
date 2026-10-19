@@ -3,6 +3,7 @@ uvicorn[standard]>=0.30
 pydantic>=2.7
 pydantic-settings>=2.4
 sqlalchemy>=2.0
+greenlet>=3.0
 alembic>=1.13
 asyncpg>=0.29
 redis>=5.0
