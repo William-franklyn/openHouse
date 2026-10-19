@@ -67,7 +67,9 @@ def make_redis_client(fake_redis_server):
 @pytest.fixture
 def storage(settings):
     with mock_aws():
-        yield Storage(settings)
+        s = Storage(settings)
+        s.ensure_bucket()
+        yield s
 
 
 @pytest.fixture

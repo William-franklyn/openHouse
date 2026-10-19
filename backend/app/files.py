@@ -46,9 +46,14 @@ class Storage:
         if settings.S3_ENDPOINT_URL:
             kwargs["endpoint_url"] = settings.S3_ENDPOINT_URL
         self.client = boto3.client("s3", **kwargs)
-        self._ensure_bucket()
+        # Deliberately no network call here - constructing a Storage must
+        # stay cheap and side-effect-free, since app/main.py builds one at
+        # import time for ASGI auto-discovery (e.g. Vercel/uvicorn looking
+        # for a top-level `app`). The real bucket-exists check runs once,
+        # asynchronously, from the app's lifespan startup instead - see
+        # ensure_bucket() and its caller in main.py.
 
-    def _ensure_bucket(self) -> None:
+    def ensure_bucket(self) -> None:
         try:
             self.client.head_bucket(Bucket=self.bucket)
         except Exception:

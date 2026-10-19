@@ -1,5 +1,6 @@
 """FastAPI app: REST routes, the /ws realtime endpoint, and the admin API."""
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -43,6 +44,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await db.create_all()
+        await asyncio.to_thread(storage.ensure_bucket)
         await hub.start()
         yield
         await hub.stop()
@@ -529,3 +531,13 @@ async def _receive_json(websocket: WebSocket) -> dict | None:
     except (TypeError, ValueError):
         await websocket.send_json({"type": "error", "code": "bad_request", "message": "Invalid JSON."})
         return None
+
+
+# Module-level instance for plain ASGI servers (`uvicorn app.main:app`) and
+# platform auto-discovery that expects to import an `app` object rather
+# than call a factory. Safe to build at import time: create_app() with no
+# args only constructs objects (Database/Storage/Hub) - it makes no network
+# calls until the lifespan above actually runs them. Tests and anything
+# needing custom settings/redis/storage should keep using create_app()
+# directly instead of this.
+app = create_app()
