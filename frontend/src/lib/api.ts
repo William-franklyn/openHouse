@@ -14,8 +14,12 @@ import {
   UploadResponse,
 } from "./types";
 
+// Empty string means "same origin" (relative paths) - correct by default
+// when frontend and backend share one domain via Vercel Services routing.
+// Local dev sets NEXT_PUBLIC_API_URL explicitly since the two run on
+// different ports there.
 export function apiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+  return process.env.NEXT_PUBLIC_API_URL ?? "";
 }
 
 export function wsUrl(): string {
