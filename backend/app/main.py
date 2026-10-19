@@ -200,6 +200,16 @@ def message_out(msg) -> dict:
 # ---------------------------------------------------------------------------
 
 def register_routes(app: FastAPI) -> None:
+    @app.get("/healthz")
+    async def healthz_route():
+        # Deliberately no DB/Redis/S3 dependency: this is a liveness check
+        # ("is the process up and routing requests"), not a readiness
+        # check. Render pings this continuously to decide whether to
+        # restart the service - tying it to Neon's free-tier cold start
+        # (a few seconds after 5 min idle) would make Render think a
+        # perfectly fine service is unhealthy every time it wakes up.
+        return {"status": "ok"}
+
     @app.post("/api/rooms")
     async def create_room_route(
         body: CreateRoomBody,

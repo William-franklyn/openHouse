@@ -5,7 +5,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     plan: free
-    healthCheckPath: /api/rooms/by-code/ZZZZZ
+    healthCheckPath: /healthz
     envVars:
       # Postgres comes from Neon (neon.tech), not Render - Render's free
       # Postgres expires after 30 days, Neon's free tier doesn't expire.

@@ -68,7 +68,10 @@ would need.
 # Replace with your service's Render URL
 BASE=https://openhouse-backend.onrender.com
 
-# Create a room
+# Just confirm the process is up and routing (no DB/Redis/S3 involved)
+curl -s "$BASE/healthz"
+
+# Create a room (this one does touch Postgres - confirms Neon is reachable)
 curl -s -X POST "$BASE/api/rooms" \
   -H 'Content-Type: application/json' \
   -d '{"name": "Smoke Test Room", "owner_name": "Admin"}' | python3 -m json.tool
