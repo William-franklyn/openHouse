@@ -113,6 +113,25 @@ async def test_seq_increases_with_no_gaps_under_concurrent_sends(client, app):
     assert seqs == list(range(1, n + 1))
 
 
+async def test_history_includes_sender_name(client, app):
+    data = await create_room(client)
+    room_id, owner_id, owner_token = data["room"]["id"], data["member"]["member_id"], data["session_token"]
+    channel_id = await general_channel_id(app, room_id)
+    await register_socket(app, room_id, owner_id)
+
+    await ws_dispatch(app, room_id, owner_id, "send_message", {"channel_id": channel_id, "text": "hi"})
+
+    resp = await client.get(
+        f"/api/rooms/{room_id}/channels/{channel_id}/messages",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert resp.status_code == 200
+    messages = resp.json()["messages"]
+    assert len(messages) == 1
+    assert messages[0]["text"] == "hi"
+    assert messages[0]["from_name"] == "Owner"
+
+
 async def test_reconnect_with_last_seq_gets_exactly_missed_messages(client, app):
     data = await create_room(client)
     room_id, owner_id = data["room"]["id"], data["member"]["member_id"]

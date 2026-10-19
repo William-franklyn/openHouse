@@ -182,12 +182,21 @@ async def active_member_count(session, room_id: str) -> int:
     return len(result.scalars().all())
 
 
-def message_out(msg) -> dict:
+async def resolve_member_names(session, member_ids: set) -> dict:
+    member_ids = {m for m in member_ids if m is not None}
+    if not member_ids:
+        return {}
+    result = await session.execute(select(Member).where(Member.id.in_(member_ids)))
+    return {m.id: m.display_name for m in result.scalars().all()}
+
+
+def message_out(msg, from_name: str | None = None) -> dict:
     return {
         "id": msg.id,
         "channel_id": msg.channel_id,
         "seq": msg.seq,
         "member_id": msg.member_id,
+        "from_name": from_name,
         "kind": msg.kind,
         "text": msg.text,
         "file_id": msg.file_id,
@@ -339,7 +348,8 @@ def register_routes(app: FastAPI) -> None:
         settings: Settings = Depends(get_settings_dep),
     ):
         rows = await messages_mod.history(session, channel_id, before_seq, settings.HISTORY_PAGE_SIZE)
-        return {"messages": [message_out(m) for m in rows]}
+        names = await resolve_member_names(session, {m.member_id for m in rows})
+        return {"messages": [message_out(m, names.get(m.member_id)) for m in rows]}
 
     @app.post("/api/rooms/{room_id}/files")
     async def upload_file_route(
