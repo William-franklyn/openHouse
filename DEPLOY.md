@@ -11,6 +11,25 @@ store, but **no S3-compatible object storage** — you need that from an
 outside provider. [Cloudflare R2](https://developers.cloudflare.com/r2/) is
 the easiest fit: S3-compatible API, a free tier, and no egress fees.
 
+## This setup is $0/month, with one catch
+
+`render.yaml` requests the **free plan** for all three Render resources
+(Postgres, Key Value, web service), and R2's free tier comfortably covers an
+MVP's file uploads. Nothing here costs money to try.
+
+**The catch:** Render's free Postgres **expires 30 days after creation**
+(then a 14-day grace period before it's actually deleted). It's not a
+permanent free tier — it's a 30-day trial that happens to be unlimited in
+every other way. Before day 30, either:
+- upgrade that one database to a paid plan (cheapest is a few dollars/month,
+  check current pricing on the Render dashboard before day 30), or
+- accept that the room data gets wiped and a fresh free Postgres gets
+  created if/when you redeploy — fine for a pilot/demo that isn't holding
+  data you need to keep.
+
+The web service and Key Value free plans don't have this expiry — only the
+database does.
+
 ## 1. Set up object storage first
 
 Pick one:
@@ -94,7 +113,8 @@ swap `ws://127.0.0.1:PORT/ws` for `wss://<your-service>.onrender.com/ws`.
   mean a WebSocket connection left open during a long idle period could get
   dropped by the platform — the client is expected to reconnect, which the
   protocol already supports via `auth` + `last_seq`.
-- **Key Value (Redis) free plan** has modest memory/connection limits —
-  fine for an MVP pilot, not for production scale.
+- **Key Value (Redis) free plan** is 25 MB with no persistence — fine for
+  an MVP pilot's rate-limit counters and pub/sub, not for production scale.
+- **Postgres free plan expires after 30 days** — see the callout above.
 - `S3_REGION` defaults to `auto` in `render.yaml`, which is what Cloudflare
   R2 expects. Change it to a real AWS region if you used S3 instead.
