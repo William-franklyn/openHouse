@@ -1,91 +1,68 @@
-# Deploying the Openhouse backend to Render
+# Deploying the Openhouse backend for free
 
-Render fits this backend well because web services are regular long-running
-processes (not serverless functions), so the WebSocket hub, its background
-Redis-listener task, and the async DB connection pool all behave exactly like
-they do locally — unlike Vercel's serverless Python runtime, which can't keep
-any of that alive between requests.
+Three services, all genuinely free with no expiry:
 
-Render provides managed Postgres and a managed Redis-compatible "Key Value"
-store, but **no S3-compatible object storage** — you need that from an
-outside provider. [Cloudflare R2](https://developers.cloudflare.com/r2/) is
-the easiest fit: S3-compatible API, a free tier, and no egress fees.
+| Piece | Provider | Why |
+|---|---|---|
+| Web service (the app itself) | **Render** | Long-running process, not serverless - the WebSocket hub, its background Redis-listener task, and the async DB pool all need a process that stays alive, which Vercel's serverless Python functions don't provide. |
+| Postgres | **Neon** | Render's free Postgres expires 30 days after creation (then gets deleted). Neon's free tier has no expiry and no credit card required - just a cold-start after 5 minutes idle, same flavor of trade-off as Render's free web service. |
+| Redis (pub/sub, rate limits) | **Render Key Value** | Render's free Key Value plan (Valkey, Redis-protocol-compatible) doesn't expire, unlike its Postgres. No need to go elsewhere for this one. |
+| File storage | **Cloudflare R2** | Render has no object storage at all. R2's free tier (10 GB, generous request quotas, zero egress fees) doesn't expire either. |
 
-## This setup is $0/month, with one catch
+None of these require a credit card for the free tier. The only real constraint: Neon and Render's web service both sleep after a few minutes idle and take a moment to wake up on the next request - fine for a demo/pilot, not for guaranteeing instant response times.
 
-`render.yaml` requests the **free plan** for all three Render resources
-(Postgres, Key Value, web service), and R2's free tier comfortably covers an
-MVP's file uploads. Nothing here costs money to try.
+## 1. Set up Neon (Postgres)
 
-**The catch:** Render's free Postgres **expires 30 days after creation**
-(then a 14-day grace period before it's actually deleted). It's not a
-permanent free tier — it's a 30-day trial that happens to be unlimited in
-every other way. Before day 30, either:
-- upgrade that one database to a paid plan (cheapest is a few dollars/month,
-  check current pricing on the Render dashboard before day 30), or
-- accept that the room data gets wiped and a fresh free Postgres gets
-  created if/when you redeploy — fine for a pilot/demo that isn't holding
-  data you need to keep.
+1. Sign up at [neon.tech](https://neon.tech), no credit card needed.
+2. Create a project (any name/region).
+3. Copy the connection string it gives you — it looks like:
+   `postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require&channel_binding=require`
+4. Paste it in as-is when Render asks for `DATABASE_URL` in step 3 below.
+   `app/db.py`'s `normalize_database_url()` already handles picking the
+   `asyncpg` driver and stripping `sslmode`/`channel_binding` (asyncpg
+   doesn't accept those as connection kwargs the way other Postgres drivers
+   do) into the SSL config asyncpg actually understands.
 
-The web service and Key Value free plans don't have this expiry — only the
-database does.
+## 2. Set up object storage (Cloudflare R2)
 
-## 1. Set up object storage first
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → **R2 Object Storage** → **Create bucket** (any name, e.g. `openhouse-files`).
+2. **Manage API Tokens** → **Create API Token** → read/write access to that bucket.
+3. Note down: **Endpoint URL** (`https://<account-id>.r2.cloudflarestorage.com`), **Bucket name**, **Access Key ID**, **Secret Access Key**.
 
-Pick one:
+(AWS S3 works too if you'd rather use that — same four values, leave the endpoint blank, use a real region like `us-east-1` instead of `auto`.)
 
-- **Cloudflare R2** (recommended): create a bucket, then an R2 API token
-  (Account → R2 → Manage API Tokens). You'll end up with:
-  - Endpoint URL: `https://<account-id>.r2.cloudflarestorage.com`
-  - Bucket name, Access Key ID, Secret Access Key
-  - Region: use `auto`
-- **AWS S3**: create a bucket + an IAM user scoped to it. Leave the endpoint
-  URL blank (AWS S3 uses default endpoint resolution) and set the real
-  region (e.g. `us-east-1`).
+## 3. Deploy the Render blueprint
 
-Keep these four values handy — the blueprint deploy below asks for them.
+Open **https://render.com/deploy?repo=https://github.com/William-franklyn/openHouse** (or in the dashboard: **New → Blueprint**, connect the `William-franklyn/openHouse` repo — Render reads `render.yaml` at the repo root automatically).
 
-## 2. Deploy the blueprint
+Render provisions, from `render.yaml`:
+- `openhouse-redis` — a managed Key Value (Valkey/Redis-compatible) instance, free plan
+- `openhouse-backend` — the web service, built from `backend/Dockerfile`, free plan
 
-1. Push this repo to GitHub (already done if you're reading this from the
-   repo).
-2. In the Render dashboard: **New → Blueprint**, connect the
-   `William-franklyn/openHouse` repo. Render reads `render.yaml` at the repo
-   root automatically.
-3. Render provisions, from that file:
-   - `openhouse-db` — a managed Postgres instance
-   - `openhouse-redis` — a managed Key Value (Redis/Valkey-compatible) instance
-   - `openhouse-backend` — a web service built from `backend/Dockerfile`
-4. During setup, Render prompts for the env vars marked `sync: false` in
-   `render.yaml` — fill in:
-   - `APP_URL` — your eventual frontend URL (a placeholder like
-     `https://openhouse.example.com` is fine until the frontend exists)
-   - `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` from
-     step 1
-5. Everything else (`DATABASE_URL`, `REDIS_URL`, `ADMIN_TOKEN`) is wired up
-   or generated automatically — `DATABASE_URL` and `REDIS_URL` are injected
-   from the Postgres/Key Value instances via `fromDatabase`/`fromService`,
-   and `ADMIN_TOKEN` is a random value Render generates for you.
-6. Click **Apply**. First deploy builds the Docker image and starts the
-   service.
+It'll prompt for every env var marked `sync: false`:
+- `DATABASE_URL` — the Neon connection string from step 1
+- `APP_URL` — a placeholder is fine (e.g. `https://openhouse.example.com`) — there's no frontend yet
+- `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` — from step 2
 
-## 3. No manual migration step needed for this first deploy
+`REDIS_URL` and `ADMIN_TOKEN` are wired up / generated automatically — you don't touch those.
+
+Click **Apply**. First deploy builds the Docker image and starts the service.
+
+## 4. No manual migration step needed for this first deploy
 
 The app calls `db.create_all()` on startup (see `app/main.py`'s `lifespan`),
 which creates every table from `app/models.py` directly against whatever
-Postgres database it's pointed at. That's enough to go from an empty
-database to a fully working schema on first boot — you don't need to run
-Alembic for this initial deploy.
+Postgres database it's pointed at — Neon in this case. That's enough to go
+from an empty database to a fully working schema on first boot.
 
 Alembic (`backend/migrations/`) is there for *future* schema changes: once
-the app is live with real data, use `alembic upgrade head` to apply new
-migrations without dropping anything. On Render, run it either from the
-**Shell** tab on the service (one-off), or — once you're on a paid compute
-plan — by adding a `preDeployCommand: alembic upgrade head` to the
-`openhouse-backend` service in `render.yaml` (Render's `preDeployCommand`
-isn't available on the free compute plan).
+there's real data, run `alembic upgrade head` (pointed at the same Neon
+`DATABASE_URL`) to apply new migrations without dropping anything. You can
+run it from your own machine against Neon directly — no need for Render's
+Shell tab or a paid `preDeployCommand` the way a Render-hosted Postgres
+would need.
 
-## 4. Verify it's actually working
+## 5. Verify it's actually working
 
 ```bash
 # Replace with your service's Render URL
@@ -107,14 +84,20 @@ swap `ws://127.0.0.1:PORT/ws` for `wss://<your-service>.onrender.com/ws`.
 
 ## Notes / limits
 
-- **Free-tier web services spin down on inactivity** and cold-start on the
-  next request (a few seconds). That's fine for REST calls and for the
-  client reconnect-with-backoff behavior the README describes, but it does
-  mean a WebSocket connection left open during a long idle period could get
-  dropped by the platform — the client is expected to reconnect, which the
-  protocol already supports via `auth` + `last_seq`.
-- **Key Value (Redis) free plan** is 25 MB with no persistence — fine for
-  an MVP pilot's rate-limit counters and pub/sub, not for production scale.
-- **Postgres free plan expires after 30 days** — see the callout above.
+- **Render's free web service spins down after 15 min idle** and cold-starts
+  on the next request (a few seconds). Fine for REST calls and for the
+  client reconnect-with-backoff behavior the README describes; a WebSocket
+  left open during a long idle period could get dropped by the platform —
+  the client is expected to reconnect, which the protocol already supports
+  via `auth` + `last_seq`.
+- **Neon's free compute suspends after 5 min idle** too, with a similar
+  cold-start on the next query. Both this and the point above mean: the
+  very first request after a quiet period is slow, everything after it is
+  normal speed.
+- **Render Key Value (Redis) free plan** is 25 MB with no persistence —
+  fine for an MVP pilot's rate-limit counters and pub/sub, not for
+  production scale.
+- **Neon free tier** is 1 GB storage / 100 CU-hours per month per project —
+  plenty for an MVP pilot, not for production scale.
 - `S3_REGION` defaults to `auto` in `render.yaml`, which is what Cloudflare
   R2 expects. Change it to a real AWS region if you used S3 instead.

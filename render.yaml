@@ -1,9 +1,3 @@
-databases:
-  - name: openhouse-db
-    databaseName: openhouse
-    user: openhouse
-    plan: free
-
 services:
   - type: web
     name: openhouse-backend
@@ -13,10 +7,13 @@ services:
     plan: free
     healthCheckPath: /api/rooms/by-code/ZZZZZ
     envVars:
+      # Postgres comes from Neon (neon.tech), not Render - Render's free
+      # Postgres expires after 30 days, Neon's free tier doesn't expire.
+      # Paste Neon's connection string in as-is; app/db.py normalizes the
+      # driver and strips the sslmode/channel_binding params asyncpg
+      # doesn't understand.
       - key: DATABASE_URL
-        fromDatabase:
-          name: openhouse-db
-          property: connectionString
+        sync: false
       - key: REDIS_URL
         fromService:
           name: openhouse-redis
