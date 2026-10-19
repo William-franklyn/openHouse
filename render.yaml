@@ -1,0 +1,47 @@
+databases:
+  - name: openhouse-db
+    databaseName: openhouse
+    user: openhouse
+    plan: basic-256mb
+
+services:
+  - type: web
+    name: openhouse-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /api/rooms/by-code/ZZZZZ
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: openhouse-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: openhouse-redis
+          property: connectionString
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: APP_NAME
+        value: Openhouse
+      - key: ROOM_WORD
+        value: Room
+      - key: APP_URL
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_REGION
+        value: auto
+
+  - type: keyvalue
+    name: openhouse-redis
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru

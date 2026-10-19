@@ -6,8 +6,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.models import Base
 
 
+def normalize_database_url(url: str) -> str:
+    """Managed Postgres providers (Render, Heroku, ...) hand out a plain
+    postgres:// or postgresql:// connection string with no driver in it.
+    SQLAlchemy's async engine needs the driver named in the scheme, so a
+    bare URL would otherwise fail to pick the (installed) asyncpg driver."""
+    if url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + url[len("postgresql://"):]
+    return url
+
+
 class Database:
     def __init__(self, database_url: str):
+        database_url = normalize_database_url(database_url)
         connect_args = {}
         if database_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
