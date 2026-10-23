@@ -61,3 +61,39 @@ textarea,
 button {
   font-family: inherit;
 }
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-message-in {
+  animation: message-in 0.18s ease-out;
+}
+
+@keyframes recording-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-recording-pulse {
+  animation: recording-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-message-in,
+  .animate-recording-pulse {
+    animation: none;
+  }
+}

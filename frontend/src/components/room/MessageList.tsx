@@ -12,6 +12,8 @@ import { MessageOut } from "@/lib/types";
 // comparison (every render looks "changed") and causes an infinite loop.
 const EMPTY_MESSAGES: MessageOut[] = [];
 
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
 export function MessageList({
   roomId,
   channelId,
@@ -33,6 +35,7 @@ export function MessageList({
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
   const [exhausted, setExhausted] = useState(false);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   const messages = useRoomStore((s) => s.messagesByChannel[channelId] ?? EMPTY_MESSAGES);
   const pinnedIds = useRoomStore((s) => s.pinnedIds);
@@ -55,6 +58,7 @@ export function MessageList({
     if (grew && nearBottom) {
       el.scrollTop = el.scrollHeight;
     }
+    setShowJumpToBottom(!nearBottom && messages.length > 0);
   }, [messages.length]);
 
   async function loadMore() {
@@ -71,29 +75,64 @@ export function MessageList({
   }
 
   function handleScroll() {
-    if (scrollRef.current && scrollRef.current.scrollTop < 80) {
-      loadMore();
-    }
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollTop < 80) loadMore();
+    setShowJumpToBottom(el.scrollHeight - el.scrollTop - el.clientHeight > 300);
+  }
+
+  function jumpToBottom() {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }
 
   const visible = messages.filter((m) => !m.member_id || !blocked.has(m.member_id));
 
   return (
-    <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-2">
-      {visible.map((msg) => (
-        <MessageItem
-          key={msg.id}
-          msg={msg}
-          token={token}
-          myRole={myRole}
-          myMemberId={myMemberId}
-          isPinned={pinnedIds.includes(msg.id)}
-          onPin={onPin}
-          onUnpin={onUnpin}
-          onDelete={onDeleteMessage}
-          onReport={onReportMessage}
-        />
-      ))}
+    <div className="relative flex-1 overflow-hidden">
+      <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto px-3 py-3 sm:px-4">
+        {visible.length === 0 && !loadingMore && (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted">
+            <span className="text-3xl">💬</span>
+            <p className="text-sm">No messages yet - say hi!</p>
+          </div>
+        )}
+
+        {visible.map((msg, i) => {
+          const prev = visible[i - 1];
+          const showHeader =
+            !prev ||
+            prev.kind === "system" ||
+            prev.member_id !== msg.member_id ||
+            new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime() > GROUP_WINDOW_MS;
+
+          return (
+            <div key={msg.id} className="animate-message-in">
+              <MessageItem
+                msg={msg}
+                token={token}
+                myRole={myRole}
+                myMemberId={myMemberId}
+                showHeader={showHeader}
+                isPinned={pinnedIds.includes(msg.id)}
+                onPin={onPin}
+                onUnpin={onUnpin}
+                onDelete={onDeleteMessage}
+                onReport={onReportMessage}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {showJumpToBottom && (
+        <button
+          onClick={jumpToBottom}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground shadow-lg"
+        >
+          ↓ New messages
+        </button>
+      )}
     </div>
   );
 }

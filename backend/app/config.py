@@ -49,11 +49,15 @@ class Settings(BaseSettings):
     MAX_PINS: int = 3
     HISTORY_PAGE_SIZE: int = 50
 
-    MAX_FILE_BYTES: int = 10 * 1024 * 1024
+    # Vercel Functions hard-cap request bodies at 4.5 MB - files between
+    # that and any higher app-level limit would never even reach this
+    # validation (the platform rejects the request before invoking the
+    # function), so this has to stay safely under that ceiling.
+    MAX_FILE_BYTES: int = 4 * 1024 * 1024
     ALLOWED_FILE_EXTENSIONS: tuple = (
         "png", "jpg", "jpeg", "gif", "webp",
         "pdf", "doc", "docx", "txt", "odt",
-        "zip",
+        "zip", "webm", "mp3", "wav", "ogg", "m4a",
     )
 
     # ---- Rate limits ----
