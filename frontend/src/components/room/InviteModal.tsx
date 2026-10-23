@@ -20,6 +20,15 @@ export function InviteModal({
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function copyCode() {
+    if (!code) return;
+    navigator.clipboard?.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
 
   async function createInvite() {
     setLoading(true);
@@ -43,8 +52,13 @@ export function InviteModal({
   return (
     <Modal open={open} onClose={handleClose} title="Invite someone">
       {code ? (
-        <div className="flex flex-col items-center gap-2 text-center">
-          <div className="font-mono text-4xl font-bold tracking-widest">{code}</div>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="w-full break-all rounded-lg bg-surface-muted px-3 py-3 font-mono text-lg font-semibold tracking-wide">
+            {code}
+          </div>
+          <button type="button" onClick={copyCode} className="text-sm text-accent underline">
+            {copied ? "Copied!" : "Copy code"}
+          </button>
           <p className="text-sm text-muted">Valid for 15 minutes, one person.</p>
           <Button className="mt-2 w-full" onClick={handleClose}>
             Done

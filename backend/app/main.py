@@ -265,12 +265,17 @@ def register_routes(app: FastAPI) -> None:
         session=Depends(get_session),
         settings: Settings = Depends(get_settings_dep),
         redis_client=Depends(get_redis),
+        hub: Hub = Depends(get_hub),
     ):
         await safety.check_join_rate(redis_client, settings, client_ip(request))
         room = await rooms_mod.get_room_by_code(session, code)
         result = await members_mod.join_room(
             session, settings, room, body.name, body.over_18, body.invite_code, body.device_id
         )
+        if result["status"] == "active":
+            await realtime.post_system_message(
+                session, settings, hub, room, f"{result['member'].display_name} joined"
+            )
         return {
             "member_id": result["member"].id,
             "room_id": room.id,

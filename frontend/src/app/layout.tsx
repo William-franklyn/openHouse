@@ -23,6 +23,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#4f46e5",
+  // Without this, content can render under the home-indicator/notch area
+  // on iPhones - safe-area-inset-* env() vars only kick in once the page
+  // opts into covering that area.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

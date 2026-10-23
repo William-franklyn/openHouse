@@ -80,7 +80,10 @@ export function MessageInput({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-end gap-1.5 border-t border-border bg-background p-3">
+    <form
+      onSubmit={handleSubmit}
+      className="flex items-end gap-1.5 border-t border-border bg-background p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]"
+    >
       <input
         ref={fileRef}
         type="file"

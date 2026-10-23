@@ -1,6 +1,6 @@
 from conftest import register_socket, ws_dispatch
 
-from app.models import Member
+from app.models import Channel, Member
 
 
 async def create_room(client, name="Test Room", owner_name="Owner"):
@@ -24,6 +24,25 @@ async def join(client, code, name, device_id=None):
 async def get_member(app, member_id):
     async with app.state.db.session() as session:
         return await session.get(Member, member_id)
+
+
+async def general_messages(app, room_id):
+    async with app.state.db.session() as session:
+        from sqlalchemy import select
+
+        from app.models import Message
+
+        channel = (
+            await session.execute(
+                select(Channel).where(Channel.room_id == room_id, Channel.name == "general")
+            )
+        ).scalar_one()
+        rows = (
+            await session.execute(
+                select(Message).where(Message.channel_id == channel.id).order_by(Message.seq)
+            )
+        ).scalars().all()
+        return list(rows)
 
 
 # 3. Permission table: remove/ban/set_role -----------------------------------
@@ -194,3 +213,39 @@ async def test_kicked_member_can_rejoin_with_new_join_unlike_banned(client, app)
         json={"name": "Guesty", "over_18": True, "device_id": "device-same"},
     )
     assert retry.status_code == 200
+
+
+# 7. Join/leave system messages ------------------------------------------------
+
+async def test_join_and_leave_post_system_messages_to_general(client, app):
+    data = await create_room(client)
+    room_id, owner_id, code = data["room"]["id"], data["member"]["member_id"], data["room"]["code"]
+
+    member = await join(client, code, "Guesty")
+    await register_socket(app, room_id, owner_id)
+    await register_socket(app, room_id, member["member_id"])
+
+    messages = await general_messages(app, room_id)
+    joined = [m for m in messages if m.kind == "system" and "Guesty joined" in m.text]
+    assert len(joined) == 1
+
+    await ws_dispatch(app, room_id, member["member_id"], "leave", {})
+
+    messages = await general_messages(app, room_id)
+    left = [m for m in messages if m.kind == "system" and "Guesty left" in m.text]
+    assert len(left) == 1
+
+
+async def test_removed_member_gets_a_left_system_message(client, app):
+    data = await create_room(client)
+    room_id, owner_id, code = data["room"]["id"], data["member"]["member_id"], data["room"]["code"]
+
+    member = await join(client, code, "Guesty")
+    await register_socket(app, room_id, owner_id)
+    await register_socket(app, room_id, member["member_id"])
+
+    await ws_dispatch(app, room_id, owner_id, "remove_member", {"member_id": member["member_id"]})
+
+    messages = await general_messages(app, room_id)
+    left = [m for m in messages if m.kind == "system" and "Guesty left" in m.text]
+    assert len(left) == 1

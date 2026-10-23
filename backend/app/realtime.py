@@ -13,6 +13,8 @@ depends on.
 import asyncio
 import json
 
+from sqlalchemy import select
+
 from app import members as members_mod
 from app import messages as messages_mod
 from app import rooms as rooms_mod
@@ -129,6 +131,20 @@ async def presence_snapshot(session, redis, room_id: str) -> list[dict]:
     return online
 
 
+async def post_system_message(session, settings, hub, room, text: str) -> None:
+    """A WhatsApp-style "X joined"/"X left" notice: a real, persisted
+    message (kind="system") in the room's general channel, so it shows up
+    in history too, not just live for whoever's currently connected."""
+    result = await session.execute(
+        select(Channel).where(Channel.room_id == room.id, Channel.name == "general")
+    )
+    channel = result.scalar_one_or_none()
+    if channel is None:
+        return
+    msg = await messages_mod.create_message(session, settings, channel, None, text=text, kind="system")
+    await hub.publish(room.id, message_event(msg, None))
+
+
 def message_event(msg: Message, from_name: str | None, client_id: str | None = None) -> dict:
     return {
         "type": "message",
@@ -207,6 +223,7 @@ async def handle_approve_member(session, settings, redis, hub, room, actor, data
     target = await _get_target_member(session, room.id, data.get("member_id"))
     target = await members_mod.approve_member(session, actor, target)
     await hub.publish(room.id, {"type": "member_joined", "member_id": target.id, "name": target.display_name})
+    await post_system_message(session, settings, hub, room, f"{target.display_name} joined")
     await _publish_presence(session, redis, hub, room)
 
 
@@ -232,6 +249,7 @@ async def handle_remove_member(session, settings, redis, hub, room, actor, data)
     )
     await hub.publish(room.id, {"type": "member_left", "member_id": target.id})
     await hub.presence_remove(room.id, target.id)
+    await post_system_message(session, settings, hub, room, f"{target.display_name} left")
     await _publish_presence(session, redis, hub, room)
 
 
@@ -246,6 +264,7 @@ async def handle_ban_member(session, settings, redis, hub, room, actor, data):
     )
     await hub.publish(room.id, {"type": "member_left", "member_id": target.id})
     await hub.presence_remove(room.id, target.id)
+    await post_system_message(session, settings, hub, room, f"{target.display_name} left")
     await _publish_presence(session, redis, hub, room)
 
 
@@ -303,9 +322,11 @@ async def handle_rename(session, settings, redis, hub, room, actor, data):
 
 
 async def handle_leave(session, settings, redis, hub, room, actor, data):
+    display_name = actor.display_name
     await members_mod.leave_room(session, actor)
     await hub.publish(room.id, {"type": "member_left", "member_id": actor.id})
     await hub.presence_remove(room.id, actor.id)
+    await post_system_message(session, settings, hub, room, f"{display_name} left")
     await _publish_presence(session, redis, hub, room)
     hub.unregister(room.id, actor.id)
 
