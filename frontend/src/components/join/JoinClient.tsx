@@ -11,7 +11,7 @@ import { loadSession, saveSession, clearSession, StoredSession } from "@/lib/ses
 import { ApiError, RoomPublic } from "@/lib/types";
 import { WaitingForApproval } from "./WaitingForApproval";
 
-export function JoinClient({ code }: { code: string }) {
+export function JoinClient({ code, invitePrefill }: { code: string; invitePrefill: string | null }) {
   const router = useRouter();
   const [preview, setPreview] = useState<RoomPublic | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export function JoinClient({ code }: { code: string }) {
 
   const [name, setName] = useState("");
   const [over18, setOver18] = useState(false);
-  const [inviteCode, setInviteCode] = useState("");
+  const [inviteCode, setInviteCode] = useState(invitePrefill ?? "");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<"name" | "anon" | null>(null);
   const [pending, setPending] = useState<{ memberId: string; token: string } | null>(null);
@@ -103,7 +103,7 @@ export function JoinClient({ code }: { code: string }) {
           {preview.member_count} {preview.member_count === 1 ? "person" : "people"} here now
         </p>
         <p className="mt-3 text-xs text-muted">
-          Be respectful. Reports go to the room&apos;s owner and moderators, and the platform team.
+          Be respectful. Reports go to the room&apos;s house owner and moderators, and the platform team.
         </p>
       </div>
 

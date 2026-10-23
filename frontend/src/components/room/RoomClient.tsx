@@ -189,7 +189,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
         </div>
       </div>
 
-      <InviteModal open={showInvite} onClose={() => setShowInvite(false)} roomId={roomId} token={session.token} />
+      <InviteModal
+        open={showInvite}
+        onClose={() => setShowInvite(false)}
+        roomId={roomId}
+        roomCode={room.code}
+        token={session.token}
+      />
       <ReportModal
         open={reportTarget !== null}
         onClose={() => setReportTarget(null)}

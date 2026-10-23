@@ -18,10 +18,10 @@ export function OwnershipOfferModal({
         onAnswer(false);
         useRoomStore.getState().setOwnershipOffer(null);
       }}
-      title="Ownership offer"
+      title="House owner offer"
     >
       <p className="text-sm text-muted">
-        {fromName} wants to make you the owner of this room. You&apos;ll get full control, and{" "}
+        {fromName} wants to make you the house owner of this room. You&apos;ll get full control, and{" "}
         {fromName} becomes a regular member.
       </p>
       <div className="mt-4 flex gap-2">

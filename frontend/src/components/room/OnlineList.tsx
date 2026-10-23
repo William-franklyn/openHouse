@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRoomStore } from "@/lib/store";
 import { Badge } from "@/components/ui/Badge";
+import { roleLabel } from "@/lib/roleLabel";
 import { MemberMenu } from "./MemberMenu";
 import { PresenceMember } from "@/lib/types";
 
@@ -36,7 +37,9 @@ export function OnlineList({
           className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-muted"
         >
           <span className="truncate">{m.name}</span>
-          {m.role !== "member" && <Badge tone={m.role === "owner" ? "accent" : "default"}>{m.role}</Badge>}
+          {m.role !== "member" && (
+            <Badge tone={m.role === "owner" ? "accent" : "default"}>{roleLabel(m.role)}</Badge>
+          )}
         </button>
       ))}
 

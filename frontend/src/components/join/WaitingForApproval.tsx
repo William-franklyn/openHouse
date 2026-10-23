@@ -49,7 +49,7 @@ export function WaitingForApproval({
       <Spinner className="h-8 w-8 text-accent" />
       <h1 className="text-lg font-semibold">Waiting for approval…</h1>
       <p className="text-sm text-muted">
-        The room&apos;s owner or a moderator needs to let you in. This page will move on
+        The room&apos;s house owner or a moderator needs to let you in. This page will move on
         automatically once they do.
       </p>
     </div>

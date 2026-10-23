@@ -84,10 +84,10 @@ export function ShareScreen({
       </details>
 
       <div className="rounded-xl border border-danger/40 bg-surface p-4 print:hidden">
-        <h2 className="font-semibold">Owner recovery code</h2>
+        <h2 className="font-semibold">House owner recovery code</h2>
         <p className="mt-1 text-sm text-muted">
-          Save this somewhere safe. If you lose this device, entering this code gets you admin
-          back.
+          Save this somewhere safe. If you lose this device, entering this code gets you house
+          owner access back.
         </p>
         <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-surface-muted px-3 py-2">
           <span className="font-mono text-lg tracking-wide">{recoveryCode}</span>

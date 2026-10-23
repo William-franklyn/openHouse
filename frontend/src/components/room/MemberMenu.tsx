@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { blockMember, getBlockedIds, unblockMember } from "@/lib/blocked";
+import { roleLabel } from "@/lib/roleLabel";
 import { MemberRole } from "@/lib/types";
 
 export function MemberMenu({
@@ -42,7 +43,7 @@ export function MemberMenu({
     <Modal open={open} onClose={onClose} title={member.name}>
       <div className="flex flex-col gap-2">
         <div className="mb-2">
-          <Badge tone={member.role === "owner" ? "accent" : "default"}>{member.role}</Badge>
+          <Badge tone={member.role === "owner" ? "accent" : "default"}>{roleLabel(member.role)}</Badge>
         </div>
 
         {!isSelf && (
@@ -89,7 +90,7 @@ export function MemberMenu({
 
         {isOwner && !isSelf && (
           <Button variant="secondary" onClick={() => onOfferOwnership(member.member_id)}>
-            Offer ownership
+            Make house owner
           </Button>
         )}
       </div>

@@ -107,7 +107,7 @@ export function RoomSettingsPanel({
           disabled={saving}
         >
           <option value="open">Open — anyone with the code</option>
-          <option value="approval">Approval — owner/mods approve each join</option>
+          <option value="approval">Approval — house owner/mods approve each join</option>
           <option value="invite_only">Invite only — needs a one-time invite code</option>
         </Select>
 
@@ -118,7 +118,7 @@ export function RoomSettingsPanel({
             onChange={(e) => saveInviteBy(e.target.value as "admins" | "members")}
             disabled={saving}
           >
-            <option value="admins">Owner + moderators only</option>
+            <option value="admins">House owner + moderators only</option>
             <option value="members">Any member</option>
           </Select>
         )}
@@ -148,7 +148,7 @@ export function RoomSettingsPanel({
         </div>
 
         <p className="text-xs text-muted">
-          Make someone a moderator or hand over ownership from their name in the online list.
+          Make someone a moderator or hand over house owner from their name in the online list.
         </p>
 
         {error && <p className="text-sm text-danger">{error}</p>}

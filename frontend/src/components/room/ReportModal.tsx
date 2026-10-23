@@ -56,7 +56,7 @@ export function ReportModal({
       {done ? (
         <div className="flex flex-col gap-4">
           <p className="text-sm text-muted">
-            Thanks - this has been sent to the room&apos;s owner and moderators.
+            Thanks - this has been sent to the room&apos;s house owner and moderators.
           </p>
           <Button onClick={handleClose}>Close</Button>
         </div>
