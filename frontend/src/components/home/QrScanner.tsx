@@ -1,18 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import jsQR from "jsqr";
 import { Modal } from "@/components/ui/Modal";
-
-// BarcodeDetector is a native, no-dependency browser API (Chrome/Edge/Android
-// Chrome, Safari 17+). Firefox doesn't support it yet - we detect and fall
-// back to a plain message rather than shipping a JS decoder for everyone.
-declare global {
-  interface Window {
-    BarcodeDetector?: new (options: { formats: string[] }) => {
-      detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
-    };
-  }
-}
 
 export function QrScanner({
   open,
@@ -24,12 +14,12 @@ export function QrScanner({
   onDetected: (value: string) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const supported = typeof window !== "undefined" && "BarcodeDetector" in window;
 
   useEffect(() => {
-    if (!open || !supported) return;
+    if (!open) return;
     let cancelled = false;
     let rafId: number;
 
@@ -43,22 +33,32 @@ export function QrScanner({
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        // videoWidth/videoHeight are 0 until a frame has actually decoded -
+        // grabbing frames before that gives an empty canvas to scan.
+        await new Promise<void>((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+        await video.play();
+        if (cancelled) return;
 
-        const detector = new window.BarcodeDetector!({ formats: ["qr_code"] });
-        const tick = async () => {
-          if (cancelled || !videoRef.current) return;
-          try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes.length > 0) {
-              onDetected(codes[0].rawValue);
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext("2d", { willReadFrequently: true });
+
+        const tick = () => {
+          if (cancelled || !video || !canvas || !ctx) return;
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const result = jsQR(frame.data, frame.width, frame.height);
+            if (result) {
+              onDetected(result.data);
               return;
             }
-          } catch {
-            // transient decode errors are normal mid-scan, keep trying
           }
           rafId = requestAnimationFrame(tick);
         };
@@ -75,15 +75,11 @@ export function QrScanner({
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [open, supported, onDetected]);
+  }, [open, onDetected]);
 
   return (
     <Modal open={open} onClose={onClose} title="Scan QR code">
-      {!supported ? (
-        <p className="text-sm text-muted">
-          QR scanning isn&apos;t supported in this browser. Type the invite code in instead.
-        </p>
-      ) : error ? (
+      {error ? (
         <p className="text-sm text-danger">{error}</p>
       ) : (
         <video
@@ -93,6 +89,7 @@ export function QrScanner({
           className="aspect-square w-full rounded-lg bg-black object-cover"
         />
       )}
+      <canvas ref={canvasRef} className="hidden" />
     </Modal>
   );
 }

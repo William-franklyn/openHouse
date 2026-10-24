@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, KeyboardEvent, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
+import { useRoomStore } from "@/lib/store";
 import { ApiError } from "@/lib/types";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { CameraCapture } from "./CameraCapture";
@@ -53,7 +54,11 @@ export function MessageInput({
     try {
       await api.uploadFile(roomId, token, file, channelId);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "Upload failed.");
+      // Not window.alert(): iOS silently swallows alert() for apps
+      // installed to the home screen (standalone display mode), which
+      // would make a real failure look like nothing happened at all.
+      const message = err instanceof ApiError ? err.message : "Upload failed.";
+      useRoomStore.getState().setError(err instanceof ApiError ? err.code : "upload_failed", message);
     } finally {
       setUploading(false);
     }

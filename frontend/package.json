@@ -10,6 +10,7 @@
     "e2e": "node e2e/smoke.mjs"
   },
   "dependencies": {
+    "jsqr": "^1.4.0",
     "next": "16.4.2",
     "qrcode.react": "^4.2.0",
     "react": "19.3.0",
