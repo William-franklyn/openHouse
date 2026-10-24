@@ -89,10 +89,14 @@ export function MessageInput({
       onSubmit={handleSubmit}
       className="flex items-end gap-1.5 border-t border-border bg-background p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]"
     >
+      {/* Not display:none (className="hidden") - iOS Safari has a
+          long-standing bug where a file <input>'s change event fires
+          unreliably once the native picker returns if the input isn't
+          actually in the render tree. This keeps it there but invisible. */}
       <input
         ref={fileRef}
         type="file"
-        className="hidden"
+        style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
         onChange={handleFilePicked}
         accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.txt,.odt,.zip"
       />
