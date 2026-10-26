@@ -139,7 +139,12 @@ export function MessageInput({
           maxLength={2000}
           placeholder="Message"
           aria-label="Message"
-          className="min-h-9 max-h-40 flex-1 resize-none bg-transparent px-1 py-1.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted"
+          // text-[16px] (not 14px): below 16px, iOS/Android browsers
+          // auto-zoom the whole page on focus to make the text legible -
+          // that's the "it zooms in" jump. outline-none! (important):
+          // the global :focus-visible ring in globals.css otherwise wins
+          // the cascade and overrides the plain outline-none below it.
+          className="min-h-9 max-h-40 flex-1 resize-none bg-transparent px-1 py-1.5 text-[16px] leading-relaxed text-foreground outline-none! placeholder:text-muted"
         />
 
         {text.trim() ? (
