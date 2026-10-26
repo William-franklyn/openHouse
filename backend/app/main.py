@@ -346,6 +346,24 @@ def register_routes(app: FastAPI) -> None:
         new_code = await rooms_mod.rotate_code(session, settings, room)
         return {"code": new_code}
 
+    @app.post("/api/rooms/{room_id}/end")
+    async def end_room_route(
+        room_id: str,
+        actor: Member = Depends(require_room_member),
+        session=Depends(get_session),
+        hub: Hub = Depends(get_hub),
+    ):
+        # Owner-only, matching delete_room_route below - distinct from it
+        # though: this just stamps ends_at to now (same field the "ends at"
+        # scheduler uses), so chat history and files are untouched and the
+        # owner can reopen the room later by clearing "ends at" in settings.
+        if actor.role != "owner":
+            raise DomainError("not_allowed", "Only the house owner can end this room.")
+        room = await rooms_mod.get_room_or_404(session, room_id)
+        await rooms_mod.update_room_settings(session, room, ends_at=utcnow())
+        await hub.publish(room_id, {"type": "room_ended", "message": "This room was ended by the house owner."})
+        return {"ok": True}
+
     @app.delete("/api/rooms/{room_id}")
     async def delete_room_route(
         room_id: str,

@@ -124,6 +124,10 @@ export const api = {
     return request<{ ok: true }>(`/api/rooms/${roomId}`, { method: "DELETE", token });
   },
 
+  endRoom(roomId: string, token: string) {
+    return request<{ ok: true }>(`/api/rooms/${roomId}/end`, { method: "POST", token });
+  },
+
   createInvite(roomId: string, token: string) {
     return request<InviteCreated>(`/api/rooms/${roomId}/invites`, {
       method: "POST",

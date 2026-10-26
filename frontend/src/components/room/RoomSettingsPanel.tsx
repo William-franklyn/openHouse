@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { DoorClosed, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
+import { useRoomStore } from "@/lib/store";
 import { ApiError, JoinPolicy, RoomPublic } from "@/lib/types";
 import { DeleteRoomDialog } from "./DeleteRoomDialog";
+import { EndRoomDialog } from "./EndRoomDialog";
 
 export function RoomSettingsPanel({
   open,
@@ -27,10 +29,12 @@ export function RoomSettingsPanel({
   onRoomUpdated: (room: RoomPublic) => void;
   onDeleted: () => void;
 }) {
+  const myRole = useRoomStore((s) => s.myRole);
   const [joinPolicy, setJoinPolicy] = useState<JoinPolicy>(room.join_policy);
   const [inviteBy, setInviteBy] = useState<"admins" | "members">("admins");
   const [endsAt, setEndsAt] = useState("");
   const [newCode, setNewCode] = useState<string | null>(null);
+  const [showEnd, setShowEnd] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -86,6 +90,19 @@ export function RoomSettingsPanel({
       setError(err instanceof ApiError ? err.message : "Couldn't rotate the code.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleEnd() {
+    try {
+      await api.endRoom(roomId, token);
+      // No further state update here - the room-wide "room_ended" broadcast
+      // this triggers arrives over the same WS connection RoomClient already
+      // listens on, which is what actually swaps in the terminal overlay.
+      setShowEnd(false);
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't end the room.");
     }
   }
 
@@ -154,12 +171,26 @@ export function RoomSettingsPanel({
 
         {error && <p className="text-sm text-danger">{error}</p>}
 
-        <Button variant="danger" onClick={() => setShowDelete(true)}>
-          <Trash2 size={15} />
-          Delete room
-        </Button>
+        {myRole === "owner" ? (
+          <>
+            <Button variant="secondary" onClick={() => setShowEnd(true)}>
+              <DoorClosed size={15} />
+              End room now
+            </Button>
+
+            <Button variant="danger" onClick={() => setShowDelete(true)}>
+              <Trash2 size={15} />
+              Delete room
+            </Button>
+          </>
+        ) : (
+          <p className="text-xs text-muted">
+            Only the house owner can end or delete the room.
+          </p>
+        )}
       </div>
 
+      <EndRoomDialog open={showEnd} onClose={() => setShowEnd(false)} onConfirm={handleEnd} />
       <DeleteRoomDialog
         open={showDelete}
         onClose={() => setShowDelete(false)}

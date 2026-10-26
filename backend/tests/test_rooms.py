@@ -186,6 +186,60 @@ async def test_only_owner_can_delete_room(client):
     assert ok.status_code == 200
 
 
+# 3b. End room now (distinct from delete: no data loss) ----------------------
+
+async def test_only_owner_can_end_room(client):
+    data = await create_room(client)
+    room_id, code, owner_token = data["room"]["id"], data["room"]["code"], data["session_token"]
+
+    join_resp = await client.post(f"/api/rooms/{code}/join", json={"name": "Maria", "over_18": True})
+    member_token = join_resp.json()["session_token"]
+
+    denied = await client.post(f"/api/rooms/{room_id}/end", headers=auth(member_token))
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "not_allowed"
+
+    ok = await client.post(f"/api/rooms/{room_id}/end", headers=auth(owner_token))
+    assert ok.status_code == 200
+
+
+async def test_ending_a_room_blocks_new_joins_but_keeps_files_and_history(client):
+    data = await create_room(client)
+    room_id, code, owner_token = data["room"]["id"], data["room"]["code"], data["session_token"]
+
+    upload = await client.post(
+        f"/api/rooms/{room_id}/files",
+        files={"file": ("note.txt", b"keep me", "text/plain")},
+        headers=auth(owner_token),
+    )
+    file_id = upload.json()["file_id"]
+
+    ended = await client.post(f"/api/rooms/{room_id}/end", headers=auth(owner_token))
+    assert ended.status_code == 200
+
+    blocked = await client.post(f"/api/rooms/{code}/join", json={"name": "Late", "over_18": True})
+    assert blocked.status_code == 410
+    assert blocked.json()["code"] == "room_ended"
+
+    # Unlike delete, the file (and by extension chat history) is untouched -
+    # ending just stamps ends_at, it doesn't run delete_room's cleanup.
+    dl = await client.get(f"/api/files/{file_id}", headers=auth(owner_token))
+    assert dl.status_code == 200
+
+
+async def test_ending_a_room_broadcasts_to_connected_members(client, app):
+    from conftest import register_socket
+
+    data = await create_room(client)
+    room_id, owner_id, owner_token = data["room"]["id"], data["member"]["member_id"], data["session_token"]
+    ws = await register_socket(app, room_id, owner_id)
+
+    await client.post(f"/api/rooms/{room_id}/end", headers=auth(owner_token))
+
+    ended_events = [e for e in ws.sent if e.get("type") == "room_ended"]
+    assert len(ended_events) == 1
+
+
 # 5. Recovery code ------------------------------------------------------------
 
 async def test_recovery_code_restores_ownership(client):
