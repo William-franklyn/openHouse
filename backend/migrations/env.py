@@ -5,18 +5,26 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import get_settings
+from app.db import normalize_database_url
 from app.models import Base
 
 config = context.config
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Managed Postgres providers (Neon, etc.) hand out a plain postgresql://
+# URL with sslmode=/channel_binding= query params - asyncpg needs the
+# +asyncpg dialect named explicitly and rejects those libpq-only params
+# outright. db.py's app-server startup already normalizes this; migrations
+# need the exact same treatment or they pick a driver that isn't even
+# installed (psycopg) instead of failing closed with a clear message.
+database_url, connect_args = normalize_database_url(settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", database_url)
 
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.DATABASE_URL,
+        url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -36,6 +44,7 @@ async def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
