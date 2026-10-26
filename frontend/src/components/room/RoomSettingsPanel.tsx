@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -125,8 +126,8 @@ export function RoomSettingsPanel({
 
         <div>
           <label className="text-sm font-medium">Room code</label>
-          <div className="mt-1.5 flex items-center gap-3">
-            <span className="font-mono text-lg">{newCode ?? room.code}</span>
+          <div className="mt-1.5 flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-surface-muted px-3.5 py-2.5">
+            <span className="font-mono text-[16px] font-semibold tracking-wide">{newCode ?? room.code}</span>
             <Button variant="secondary" size="sm" onClick={rotateCode} disabled={saving}>
               Generate new code
             </Button>
@@ -154,6 +155,7 @@ export function RoomSettingsPanel({
         {error && <p className="text-sm text-danger">{error}</p>}
 
         <Button variant="danger" onClick={() => setShowDelete(true)}>
+          <Trash2 size={15} />
           Delete room
         </Button>
       </div>

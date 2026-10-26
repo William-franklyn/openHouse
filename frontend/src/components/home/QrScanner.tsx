@@ -86,7 +86,7 @@ export function QrScanner({
           ref={videoRef}
           muted
           playsInline
-          className="aspect-square w-full rounded-lg bg-black object-cover"
+          className="aspect-square w-full rounded-[var(--radius-md)] bg-black object-cover"
         />
       )}
       <canvas ref={canvasRef} className="hidden" />

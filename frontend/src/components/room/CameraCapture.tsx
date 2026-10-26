@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Camera } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 
@@ -105,7 +106,11 @@ export function CameraCapture({
       ) : capturedUrl ? (
         <div className="flex flex-col gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={capturedUrl} alt="Captured" className="aspect-square w-full rounded-lg object-cover" />
+          <img
+            src={capturedUrl}
+            alt="Captured"
+            className="aspect-square w-full rounded-[var(--radius-md)] object-cover"
+          />
           <div className="flex gap-2">
             <Button variant="secondary" className="flex-1" onClick={retake}>
               Retake
@@ -121,10 +126,11 @@ export function CameraCapture({
             ref={videoRef}
             muted
             playsInline
-            className="aspect-square w-full rounded-lg bg-black object-cover"
+            className="aspect-square w-full rounded-[var(--radius-md)] bg-black object-cover"
           />
           <Button onClick={capture} disabled={!videoReady}>
-            {videoReady ? "📸 Capture" : "Starting camera…"}
+            <Camera size={16} />
+            {videoReady ? "Capture" : "Starting camera…"}
           </Button>
         </div>
       )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 function formatElapsed(ms: number): string {
@@ -87,9 +88,9 @@ export function VoiceRecorder({
 
   if (error) {
     return (
-      <div className="flex items-center justify-between gap-2 rounded-lg bg-danger/10 px-3 py-2.5 text-sm text-danger">
+      <div className="flex items-center justify-between gap-2 rounded-[var(--radius-lg)] bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
         {error}
-        <button onClick={onCancel} className="font-medium underline">
+        <button onClick={onCancel} className="text-[13px] font-medium underline underline-offset-2">
           Close
         </button>
       </div>
@@ -97,11 +98,16 @@ export function VoiceRecorder({
   }
 
   return (
-    <div className="flex items-center gap-3 rounded-full border border-border bg-surface px-4 py-2.5">
+    <div className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-border bg-background px-4 py-2.5">
       <span className="h-2.5 w-2.5 animate-recording-pulse rounded-full bg-danger" />
-      <span className="flex-1 font-mono text-sm tabular-nums">{formatElapsed(elapsedMs)}</span>
-      <button type="button" onClick={cancel} aria-label="Cancel recording" className="text-muted hover:text-danger">
-        ✕
+      <span className="flex-1 font-mono text-sm tabular-nums text-foreground">{formatElapsed(elapsedMs)}</span>
+      <button
+        type="button"
+        onClick={cancel}
+        aria-label="Cancel recording"
+        className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-surface-muted hover:text-danger"
+      >
+        <X size={15} />
       </button>
       <Button type="button" size="sm" onClick={stopAndSend}>
         Send

@@ -9,7 +9,8 @@ import { clearSession, loadSession, StoredSession } from "@/lib/session";
 import { useRoomStore } from "@/lib/store";
 import { useRoomSocket } from "@/lib/useRoomSocket";
 import { ApiError, RoomPublic } from "@/lib/types";
-import { ChannelTabs } from "./ChannelTabs";
+import { RoomSidebar } from "./RoomSidebar";
+import { ConversationHeader } from "./ConversationHeader";
 import { PinnedBanner } from "./PinnedBanner";
 import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
@@ -19,15 +20,18 @@ import { ReportModal } from "./ReportModal";
 import { RoomSettingsPanel } from "./RoomSettingsPanel";
 import { OwnershipOfferModal } from "./OwnershipOfferModal";
 import { TerminalStateOverlay } from "./TerminalStateOverlay";
+import { CreateChannelModal } from "./CreateChannelModal";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
   const [session, setSession] = useState<StoredSession | null>(null);
   const [room, setRoom] = useState<RoomPublic | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [showOnline, setShowOnline] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ memberId?: string; messageId?: string } | null>(null);
 
   const { send } = useRoomSocket(session?.token ?? null);
@@ -75,6 +79,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
     });
   }, [session, activeChannelId, roomId]);
 
+  // Members panel open by default on large screens, closed on small ones.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setShowMembers(window.matchMedia("(min-width: 1280px)").matches);
+  }, []);
+
   if (roomDeletedMessage) return <TerminalStateOverlay roomId={roomId} message={roomDeletedMessage} />;
   if (removedReason) return <TerminalStateOverlay roomId={roomId} message={removedReason} />;
   if (roomEnded) return <TerminalStateOverlay roomId={roomId} message="This room has ended." />;
@@ -100,7 +110,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   if (!session || !room || !activeChannelId) {
     return (
-      <div className="flex justify-center py-16">
+      <div className="flex h-dvh items-center justify-center">
         <Spinner className="h-6 w-6 text-accent" />
       </div>
     );
@@ -110,76 +120,65 @@ export function RoomClient({ roomId }: { roomId: string }) {
     myRole === "owner" ||
     myRole === "mod" ||
     (room.join_policy === "invite_only" && room.invite_by === "members");
+  const canManage = myRole === "owner" || myRole === "mod";
+
+  function handleLogout() {
+    send("leave");
+    clearSession(roomId);
+    router.push("/");
+  }
 
   return (
-    <div className="flex h-dvh flex-col">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div>
-          <h1 className="text-sm font-semibold">{room.name}</h1>
-          <p className="text-xs text-muted">You are {session.name}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {canInvite && (
-            <Button variant="secondary" size="sm" onClick={() => setShowInvite(true)}>
-              Invite
-            </Button>
-          )}
-          {(myRole === "owner" || myRole === "mod") && (
-            <Button variant="secondary" size="sm" onClick={() => setShowSettings(true)}>
-              Settings
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="sm:hidden"
-            onClick={() => setShowOnline((v) => !v)}
-          >
-            Online
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              send("leave");
-              clearSession(roomId);
-              router.push("/");
-            }}
-          >
-            Log out
-          </Button>
-        </div>
-      </header>
+    <div className="flex h-dvh overflow-hidden bg-background">
+      <RoomSidebar
+        roomName={room.name}
+        myName={session.name}
+        myRole={myRole}
+        canInvite={canInvite}
+        canManage={canManage}
+        mobileOpen={showSidebar}
+        onCloseMobile={() => setShowSidebar(false)}
+        onOpenCreateChannel={() => setShowCreateChannel(true)}
+        onInvite={() => setShowInvite(true)}
+        onSettings={() => setShowSettings(true)}
+        onLogout={handleLogout}
+      />
 
-      <ChannelTabs onCreateChannel={(name) => send("create_channel", { name })} />
-      <PinnedBanner />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <ConversationHeader
+          onOpenSidebar={() => setShowSidebar(true)}
+          onToggleMembers={() => setShowMembers((v) => !v)}
+          membersOpen={showMembers}
+        />
+        <PinnedBanner />
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <MessageList
-            roomId={roomId}
-            channelId={activeChannelId}
-            token={session.token}
-            onPin={(messageId) => send("pin", { message_id: messageId })}
-            onUnpin={(messageId) => send("unpin", { message_id: messageId })}
-            onDeleteMessage={(messageId) => send("delete_message", { message_id: messageId })}
-            onReportMessage={(messageId) => setReportTarget({ messageId })}
-          />
-          <MessageInput
-            roomId={roomId}
-            channelId={activeChannelId}
-            token={session.token}
-            onSend={(text) => send("send_message", { channel_id: activeChannelId, text })}
-          />
-          {status === "reconnecting" && (
-            <p className="bg-surface-muted px-4 py-1 text-center text-xs text-muted">
-              Disconnected — reconnecting…
-            </p>
-          )}
-        </div>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <MessageList
+              roomId={roomId}
+              channelId={activeChannelId}
+              token={session.token}
+              onPin={(messageId) => send("pin", { message_id: messageId })}
+              onUnpin={(messageId) => send("unpin", { message_id: messageId })}
+              onDeleteMessage={(messageId) => send("delete_message", { message_id: messageId })}
+              onReportMessage={(messageId) => setReportTarget({ messageId })}
+            />
+            {status === "reconnecting" && (
+              <p className="bg-accent-soft px-4 py-1.5 text-center text-[12px] font-medium text-accent">
+                Disconnected — reconnecting…
+              </p>
+            )}
+            <MessageInput
+              roomId={roomId}
+              channelId={activeChannelId}
+              token={session.token}
+              onSend={(text) => send("send_message", { channel_id: activeChannelId, text })}
+            />
+          </div>
 
-        <div className={`${showOnline ? "fixed inset-0 z-40 bg-background sm:static sm:bg-transparent" : "hidden"} sm:block`}>
           <OnlineList
+            open={showMembers}
+            onClose={() => setShowMembers(false)}
             onKick={(id) => send("remove_member", { member_id: id })}
             onBan={(id) => send("ban_member", { member_id: id })}
             onPromote={(id, role) => send("set_role", { member_id: id, role })}
@@ -203,7 +202,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         token={session.token}
         target={reportTarget}
       />
-      {(myRole === "owner" || myRole === "mod") && (
+      {canManage && (
         <RoomSettingsPanel
           open={showSettings}
           onClose={() => setShowSettings(false)}
@@ -220,6 +219,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
       <OwnershipOfferModal
         fromName={ownershipOfferFrom}
         onAnswer={(accept) => send("answer_ownership", { accept })}
+      />
+      <CreateChannelModal
+        open={showCreateChannel}
+        onClose={() => setShowCreateChannel(false)}
+        onCreate={(name) => {
+          send("create_channel", { name });
+          setShowCreateChannel(false);
+        }}
       />
     </div>
   );

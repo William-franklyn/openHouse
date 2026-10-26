@@ -1,15 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
+  --background: #f8f9fc;
   --surface: #ffffff;
-  --surface-muted: #f5f5f5;
-  --border: #e5e5e5;
-  --muted: #737373;
-  --accent: #4f46e5;
+  --surface-muted: #f3f4f8;
+  --sidebar: #f3f4f8;
+  --sidebar-hover: #e9eaf3;
+  --border: #e7e9f0;
+  --foreground: #191b2a;
+  --muted: #777c90;
+  --accent: #6257e8;
+  --accent-hover: #5145d5;
   --accent-foreground: #ffffff;
-  --danger: #dc2626;
+  --accent-soft: #ece9fc;
+  --success: #22a06b;
+  --danger: #d94c55;
+  --danger-soft: #fbeaeb;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(25, 27, 42, 0.06);
+  --shadow-md: 0 4px 16px rgba(25, 27, 42, 0.08);
+  --shadow-lg: 0 12px 32px rgba(25, 27, 42, 0.12);
 }
 
 @theme inline {
@@ -17,27 +30,79 @@
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-hover: var(--sidebar-hover);
   --color-border: var(--border);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
   --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #f5f5f5;
-    --surface: #141414;
-    --surface-muted: #1f1f1f;
-    --border: #2b2b2b;
-    --muted: #a3a3a3;
-    --accent: #818cf8;
-    --accent-foreground: #0a0a0a;
-    --danger: #f87171;
+    --background: #0e0f16;
+    --surface: #15161f;
+    --surface-muted: #1b1c27;
+    --sidebar: #111219;
+    --sidebar-hover: #1c1d28;
+    --border: #262836;
+    --foreground: #ecedf5;
+    --muted: #8d91a6;
+    --accent: #8b81f5;
+    --accent-hover: #9c93f7;
+    --accent-foreground: #0e0f16;
+    --accent-soft: #211f3a;
+    --success: #34c98c;
+    --danger: #ef6b73;
+    --danger-soft: #311b1d;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
   }
+}
+
+:root[data-theme="dark"] {
+  --background: #0e0f16;
+  --surface: #15161f;
+  --surface-muted: #1b1c27;
+  --sidebar: #111219;
+  --sidebar-hover: #1c1d28;
+  --border: #262836;
+  --foreground: #ecedf5;
+  --muted: #8d91a6;
+  --accent: #8b81f5;
+  --accent-hover: #9c93f7;
+  --accent-foreground: #0e0f16;
+  --accent-soft: #211f3a;
+  --success: #34c98c;
+  --danger: #ef6b73;
+  --danger-soft: #311b1d;
+}
+
+:root[data-theme="light"] {
+  --background: #f8f9fc;
+  --surface: #ffffff;
+  --surface-muted: #f3f4f8;
+  --sidebar: #f3f4f8;
+  --sidebar-hover: #e9eaf3;
+  --border: #e7e9f0;
+  --foreground: #191b2a;
+  --muted: #777c90;
+  --accent: #6257e8;
+  --accent-hover: #5145d5;
+  --accent-foreground: #ffffff;
+  --accent-soft: #ece9fc;
+  --success: #22a06b;
+  --danger: #d94c55;
+  --danger-soft: #fbeaeb;
 }
 
 * {
@@ -54,12 +119,30 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
 }
 
 input,
 textarea,
 button {
   font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @keyframes message-in {
@@ -74,7 +157,7 @@ button {
 }
 
 .animate-message-in {
-  animation: message-in 0.18s ease-out;
+  animation: message-in 0.16s ease-out;
 }
 
 @keyframes recording-pulse {
@@ -91,9 +174,71 @@ button {
   animation: recording-pulse 1.2s ease-in-out infinite;
 }
 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.16s ease-out;
+}
+
+/* For edge drawers (sidebar/members panel) - a vertical slide+scale (the
+   dialog animation above) reads oddly on a panel pinned to the left/right
+   edge of the screen; these move along the axis the panel actually sits
+   on. */
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.2s ease-out;
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-message-in,
-  .animate-recording-pulse {
+  .animate-recording-pulse,
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-slide-in-left,
+  .animate-slide-in-right {
     animation: none;
   }
 }

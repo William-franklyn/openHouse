@@ -1,12 +1,16 @@
 "use client";
 
 import { ChangeEvent, FormEvent, KeyboardEvent, useRef, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { Paperclip, Camera, Mic, Send } from "lucide-react";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { api } from "@/lib/api";
 import { useRoomStore } from "@/lib/store";
 import { ApiError } from "@/lib/types";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { CameraCapture } from "./CameraCapture";
+
+const iconButtonClass =
+  "flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-muted hover:text-foreground disabled:opacity-40 disabled:pointer-events-none";
 
 export function MessageInput({
   roomId,
@@ -46,7 +50,7 @@ export function MessageInput({
     setText(e.target.value);
     const el = e.target;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }
 
   async function uploadFile(file: File) {
@@ -72,7 +76,7 @@ export function MessageInput({
 
   if (recording) {
     return (
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border bg-surface p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <VoiceRecorder
           onCancel={() => setRecording(false)}
           onSend={(file) => {
@@ -87,7 +91,7 @@ export function MessageInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex items-end gap-1.5 border-t border-border bg-background p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]"
+      className="border-t border-border bg-surface px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:px-4"
     >
       {/* Not display:none (className="hidden") - iOS Safari has a
           long-standing bug where a file <input>'s change event fires
@@ -101,27 +105,31 @@ export function MessageInput({
         accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.txt,.odt,.zip"
       />
 
-      <button
-        type="button"
-        disabled={uploading}
-        onClick={() => fileRef.current?.click()}
-        aria-label="Attach file"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg text-muted hover:bg-surface-muted disabled:opacity-50"
-      >
-        {uploading ? "…" : "📎"}
-      </button>
+      <div className="flex items-end gap-1 rounded-[var(--radius-lg)] border border-border bg-background px-1.5 py-1.5 transition-colors focus-within:border-accent">
+        <Tooltip label="Attach file">
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileRef.current?.click()}
+            aria-label="Attach file"
+            className={iconButtonClass}
+          >
+            <Paperclip size={18} />
+          </button>
+        </Tooltip>
 
-      <button
-        type="button"
-        disabled={uploading}
-        onClick={() => setShowCamera(true)}
-        aria-label="Take a photo"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg text-muted hover:bg-surface-muted disabled:opacity-50"
-      >
-        📷
-      </button>
+        <Tooltip label="Take a photo">
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => setShowCamera(true)}
+            aria-label="Take a photo"
+            className={iconButtonClass}
+          >
+            <Camera size={18} />
+          </button>
+        </Tooltip>
 
-      <div className="flex flex-1 items-end rounded-3xl border border-border bg-surface px-3.5 py-2">
         <textarea
           ref={textareaRef}
           value={text}
@@ -130,25 +138,34 @@ export function MessageInput({
           rows={1}
           maxLength={2000}
           placeholder="Message"
-          className="max-h-[120px] flex-1 resize-none bg-transparent text-base leading-6 outline-none"
+          aria-label="Message"
+          className="min-h-9 max-h-40 flex-1 resize-none bg-transparent px-1 py-1.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted"
         />
-      </div>
 
-      {text.trim() ? (
-        <Button type="submit" size="sm" className="shrink-0 rounded-full px-4">
-          Send
-        </Button>
-      ) : (
-        <button
-          type="button"
-          disabled={uploading}
-          onClick={() => setRecording(true)}
-          aria-label="Record a voice message"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-lg text-accent-foreground disabled:opacity-50"
-        >
-          🎤
-        </button>
-      )}
+        {text.trim() ? (
+          <Tooltip label="Send">
+            <button
+              type="submit"
+              aria-label="Send message"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-accent text-accent-foreground transition-colors hover:bg-accent-hover"
+            >
+              <Send size={15} />
+            </button>
+          </Tooltip>
+        ) : (
+          <Tooltip label="Record a voice message">
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => setRecording(true)}
+              aria-label="Record a voice message"
+              className={iconButtonClass}
+            >
+              <Mic size={18} />
+            </button>
+          </Tooltip>
+        )}
+      </div>
 
       <CameraCapture
         open={showCamera}

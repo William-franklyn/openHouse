@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ArrowDown, Hash } from "lucide-react";
 import { api } from "@/lib/api";
 import { getBlockedIds } from "@/lib/blocked";
 import { useRoomStore } from "@/lib/store";
@@ -41,6 +42,7 @@ export function MessageList({
   const pinnedIds = useRoomStore((s) => s.pinnedIds);
   const myRole = useRoomStore((s) => s.myRole);
   const myMemberId = useRoomStore((s) => s.myMemberId);
+  const channelName = useRoomStore((s) => s.channels.find((c) => c.id === channelId)?.name ?? "");
 
   useEffect(() => {
     setBlocked(getBlockedIds());
@@ -92,9 +94,16 @@ export function MessageList({
     <div className="relative flex-1 overflow-hidden">
       <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto px-3 py-3 sm:px-4">
         {visible.length === 0 && !loadingMore && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted">
-            <span className="text-3xl">💬</span>
-            <p className="text-sm">No messages yet - say hi!</p>
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft">
+              <Hash size={22} className="text-accent" />
+            </div>
+            <h3 className="mt-2 text-[15px] font-semibold text-foreground">
+              Welcome to #{channelName}
+            </h3>
+            <p className="max-w-xs text-[13px] text-muted">
+              This is the start of the channel. Say hi to get the conversation going.
+            </p>
           </div>
         )}
 
@@ -128,9 +137,10 @@ export function MessageList({
       {showJumpToBottom && (
         <button
           onClick={jumpToBottom}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground shadow-lg"
+          className="absolute bottom-3 left-1/2 flex -translate-x-1/2 animate-slide-up items-center gap-1.5 rounded-full bg-surface px-3.5 py-2 text-[12px] font-medium text-foreground shadow-[var(--shadow-md)] ring-1 ring-border transition-transform hover:-translate-y-0.5"
         >
-          ↓ New messages
+          <ArrowDown size={13} />
+          New messages
         </button>
       )}
     </div>

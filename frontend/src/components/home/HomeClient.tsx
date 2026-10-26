@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
+import { QrCode, DoorOpen } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { CreateRoomModal } from "./CreateRoomModal";
@@ -83,6 +84,7 @@ export function HomeClient() {
       </form>
 
       <Button variant="secondary" onClick={() => setShowScan(true)}>
+        <QrCode size={16} />
         Scan QR code
       </Button>
 
@@ -93,6 +95,7 @@ export function HomeClient() {
       </div>
 
       <Button variant="ghost" onClick={() => setShowCreate(true)}>
+        <DoorOpen size={16} />
         Create a Room
       </Button>
 

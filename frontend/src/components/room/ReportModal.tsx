@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -54,11 +55,16 @@ export function ReportModal({
   return (
     <Modal open={open} onClose={handleClose} title="Report">
       {done ? (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col items-center gap-3 py-2 text-center">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-success/10">
+            <CheckCircle2 size={22} className="text-success" />
+          </div>
           <p className="text-sm text-muted">
             Thanks - this has been sent to the room&apos;s house owner and moderators.
           </p>
-          <Button onClick={handleClose}>Close</Button>
+          <Button className="w-full" onClick={handleClose}>
+            Close
+          </Button>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

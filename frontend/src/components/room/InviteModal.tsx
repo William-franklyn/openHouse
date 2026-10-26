@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, Copy, Link2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
@@ -60,29 +61,42 @@ export function InviteModal({
       {code ? (
         <div className="flex flex-col gap-4">
           <div>
-            <p className="mb-1.5 text-sm font-medium">Send this link</p>
-            <div className="break-all rounded-lg bg-surface-muted px-3 py-2.5 text-sm">{link}</div>
-            <button type="button" onClick={() => copy(link, "link")} className="mt-1.5 text-sm text-accent underline">
+            <p className="mb-1.5 text-[13px] font-medium text-foreground">Send this link</p>
+            <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-border bg-surface-muted px-3 py-2.5">
+              <Link2 size={14} className="shrink-0 text-muted" />
+              <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{link}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => copy(link, "link")}
+              className="mt-1.5 flex items-center gap-1.5 text-[13px] font-medium text-accent"
+            >
+              {copied === "link" ? <Check size={14} /> : <Copy size={14} />}
               {copied === "link" ? "Copied!" : "Copy link"}
             </button>
           </div>
 
-          <details className="text-sm">
-            <summary className="cursor-pointer text-muted">Or share the code manually</summary>
-            <div className="mt-2 flex flex-col items-center gap-1.5 text-center">
-              <div className="w-full break-all rounded-lg bg-surface-muted px-3 py-2 font-mono text-sm font-semibold tracking-wide">
+          <details className="text-[13px]">
+            <summary className="cursor-pointer select-none text-muted">Or share the code manually</summary>
+            <div className="mt-2 flex flex-col items-center gap-1.5 rounded-[var(--radius-md)] bg-surface-muted p-3 text-center">
+              <div className="w-full break-all font-mono text-[14px] font-semibold tracking-wide text-foreground">
                 {code}
               </div>
-              <p className="text-xs text-muted">
+              <p className="text-[11px] text-muted">
                 They&apos;ll need this room&apos;s link too - this code alone can&apos;t get them in.
               </p>
-              <button type="button" onClick={() => copy(code, "code")} className="text-sm text-accent underline">
+              <button
+                type="button"
+                onClick={() => copy(code, "code")}
+                className="flex items-center gap-1.5 text-[13px] font-medium text-accent"
+              >
+                {copied === "code" ? <Check size={14} /> : <Copy size={14} />}
                 {copied === "code" ? "Copied!" : "Copy code"}
               </button>
             </div>
           </details>
 
-          <p className="text-sm text-muted">Valid for 15 minutes, one person.</p>
+          <p className="text-[12px] text-muted">Valid for 15 minutes, one person.</p>
           <Button className="w-full" onClick={handleClose}>
             Done
           </Button>

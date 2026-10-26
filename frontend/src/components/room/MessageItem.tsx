@@ -1,13 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Pin, PinOff, Trash2, Flag, FileText } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { api } from "@/lib/api";
 import { DownloadResponse, MemberRole, MessageOut } from "@/lib/types";
 
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+function formatHourMinute(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   } catch {
     return "";
   }
@@ -22,7 +32,7 @@ function formatSize(bytes: number): string {
 const AUDIO_EXT = /\.(webm|mp3|wav|ogg|m4a)$/i;
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
 
-function FileMessage({ msg, token, isMine }: { msg: MessageOut; token: string; isMine: boolean }) {
+function FileMessage({ msg, token }: { msg: MessageOut; token: string }) {
   const [info, setInfo] = useState<DownloadResponse | null>(null);
   const [error, setError] = useState(false);
 
@@ -39,7 +49,7 @@ function FileMessage({ msg, token, isMine }: { msg: MessageOut; token: string; i
   }
   if (!info) {
     return (
-      <div className="flex items-center gap-2 text-sm opacity-70">
+      <div className="flex items-center gap-2 text-sm text-muted">
         <span className="h-3 w-3 animate-pulse rounded-full bg-current" />
         Loading…
       </div>
@@ -48,20 +58,23 @@ function FileMessage({ msg, token, isMine }: { msg: MessageOut; token: string; i
 
   if (AUDIO_EXT.test(info.filename)) {
     return (
-      <div className="flex flex-col gap-1">
-        <audio controls src={info.url} className="h-10 w-56 max-w-full" />
-        <span className={`text-[11px] ${isMine ? "text-accent-foreground/70" : "text-muted"}`}>
-          Voice message · {formatSize(info.size)}
-        </span>
+      <div className="mt-1 flex flex-col gap-1">
+        <audio controls src={info.url} className="h-10 w-72 max-w-full" />
+        <span className="text-[11px] text-muted">Voice message · {formatSize(info.size)}</span>
       </div>
     );
   }
 
   if (IMAGE_EXT.test(info.filename)) {
     return (
-      <a href={info.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl">
+      <a
+        href={info.url}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-1 block w-fit overflow-hidden rounded-[var(--radius-md)] border border-border"
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={info.url} alt={info.filename} className="max-h-72 max-w-full rounded-xl object-cover" />
+        <img src={info.url} alt={info.filename} className="max-h-72 max-w-full object-cover" />
       </a>
     );
   }
@@ -72,16 +85,12 @@ function FileMessage({ msg, token, isMine }: { msg: MessageOut; token: string; i
       download={info.filename}
       target="_blank"
       rel="noreferrer"
-      className={`inline-flex max-w-xs items-center gap-2 rounded-xl border px-3 py-2 ${
-        isMine ? "border-white/20 bg-white/10" : "border-border bg-surface-muted"
-      }`}
+      className="mt-1 inline-flex max-w-xs items-center gap-2.5 rounded-[var(--radius-md)] border border-border bg-surface-muted px-3 py-2 transition-colors hover:bg-sidebar-hover"
     >
-      <span className="text-lg">📄</span>
-      <span className="flex flex-col overflow-hidden">
-        <span className="truncate text-sm font-medium">{info.filename}</span>
-        <span className={`text-xs ${isMine ? "text-accent-foreground/70" : "text-muted"}`}>
-          {formatSize(info.size)}
-        </span>
+      <FileText size={18} className="shrink-0 text-muted" />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-[13px] font-medium text-foreground">{info.filename}</span>
+        <span className="text-[11px] text-muted">{formatSize(info.size)}</span>
       </span>
     </a>
   );
@@ -112,8 +121,8 @@ export function MessageItem({
 }) {
   if (msg.kind === "system") {
     return (
-      <div className="flex justify-center py-2">
-        <span className="rounded-full bg-surface-muted px-3 py-1 text-xs text-muted">{msg.text}</span>
+      <div className="flex justify-center py-1.5">
+        <span className="rounded-full bg-surface-muted px-3 py-1 text-[11px] text-muted">{msg.text}</span>
       </div>
     );
   }
@@ -126,64 +135,78 @@ export function MessageItem({
 
   return (
     <div
-      className={`group flex items-end gap-2 px-1 ${isMine ? "flex-row-reverse" : ""} ${showHeader ? "mt-3" : "mt-0.5"}`}
+      className={`group relative flex gap-3 rounded-[var(--radius-sm)] px-3 py-0.5 hover:bg-surface-muted/70 sm:px-4 ${
+        showHeader ? "mt-3" : "mt-0"
+      }`}
     >
-      <div className="w-7 shrink-0">
-        {showHeader && !isMine && <Avatar name={name} seed={msg.member_id ?? name} size="sm" />}
+      <div className="w-9 shrink-0 pt-0.5 text-center">
+        {showHeader ? (
+          <Avatar name={name} seed={msg.member_id ?? name} size="md" />
+        ) : (
+          <span className="hidden pt-0.5 text-[10px] leading-none text-muted group-hover:inline-block">
+            {formatHourMinute(msg.created_at)}
+          </span>
+        )}
       </div>
 
-      <div className={`flex max-w-[75%] flex-col gap-0.5 ${isMine ? "items-end" : "items-start"}`}>
-        {showHeader && !isMine && <span className="px-1 text-xs font-medium text-muted">{name}</span>}
-
-        <div className="flex items-center gap-1.5">
-          {isMine && (
-            <span className="hidden gap-2 text-[11px] text-muted group-hover:flex">
-              {canDelete && (
-                <button onClick={() => onDelete(msg.id)} className="hover:text-danger">
-                  Delete
-                </button>
-              )}
-            </span>
-          )}
-
-          <div
-            className={`rounded-2xl px-3.5 py-2 ${
-              isMine
-                ? "rounded-br-md bg-accent text-accent-foreground"
-                : "rounded-bl-md border border-border bg-surface"
-            }`}
-          >
-            {msg.kind === "file" ? (
-              <FileMessage msg={msg} token={token} isMine={isMine} />
-            ) : (
-              <p className="whitespace-pre-wrap break-words text-sm">{msg.text}</p>
+      <div className="min-w-0 flex-1 pb-0.5">
+        {showHeader && (
+          <div className="flex items-baseline gap-2">
+            <span className="text-[14px] font-semibold text-foreground">{name}</span>
+            <span className="text-[11px] text-muted">{formatTime(msg.created_at)}</span>
+            {isPinned && (
+              <span className="flex items-center gap-1 text-[11px] text-accent">
+                <Pin size={11} /> Pinned
+              </span>
             )}
           </div>
+        )}
+        {msg.kind === "file" ? (
+          <FileMessage msg={msg} token={token} />
+        ) : (
+          <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-foreground">
+            {msg.text}
+          </p>
+        )}
+      </div>
 
-          {!isMine && (
-            <span className="hidden gap-2 text-[11px] text-muted group-hover:flex">
-              {canPin && (
-                <button onClick={() => (isPinned ? onUnpin(msg.id) : onPin(msg.id))} className="hover:text-accent">
-                  {isPinned ? "Unpin" : "Pin"}
-                </button>
-              )}
-              {canDelete && (
-                <button onClick={() => onDelete(msg.id)} className="hover:text-danger">
-                  Delete
-                </button>
-              )}
-              <button onClick={() => onReport(msg.id)} className="hover:text-danger">
-                Report
+      {(canPin || canDelete || !isMine) && (
+        <div className="absolute right-3 top-0 hidden -translate-y-1/2 items-center gap-0.5 rounded-[var(--radius-sm)] border border-border bg-surface p-0.5 shadow-[var(--shadow-sm)] group-hover:flex">
+          {canPin && (
+            <Tooltip label={isPinned ? "Unpin" : "Pin"}>
+              <button
+                onClick={() => (isPinned ? onUnpin(msg.id) : onPin(msg.id))}
+                aria-label={isPinned ? "Unpin message" : "Pin message"}
+                className="flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-surface-muted hover:text-accent"
+              >
+                {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
               </button>
-            </span>
+            </Tooltip>
+          )}
+          {canDelete && (
+            <Tooltip label="Delete">
+              <button
+                onClick={() => onDelete(msg.id)}
+                aria-label="Delete message"
+                className="flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-danger-soft hover:text-danger"
+              >
+                <Trash2 size={14} />
+              </button>
+            </Tooltip>
+          )}
+          {!isMine && (
+            <Tooltip label="Report">
+              <button
+                onClick={() => onReport(msg.id)}
+                aria-label="Report message"
+                className="flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-danger-soft hover:text-danger"
+              >
+                <Flag size={14} />
+              </button>
+            </Tooltip>
           )}
         </div>
-
-        <span className="px-1 text-[10px] text-muted">
-          {formatTime(msg.created_at)}
-          {isPinned && " · 📌 pinned"}
-        </span>
-      </div>
+      )}
     </div>
   );
 }
