@@ -101,6 +101,7 @@ function SidebarContent({
       <div className="border-t border-border p-2">
         <DropdownMenu
           align="start"
+          placement="up"
           trigger={({ toggle, open }) => (
             <button
               type="button"

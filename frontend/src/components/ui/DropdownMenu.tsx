@@ -6,10 +6,17 @@ export function DropdownMenu({
   trigger,
   children,
   align = "end",
+  placement = "down",
 }: {
   trigger: (props: { open: boolean; toggle: () => void }) => ReactNode;
   children: ReactNode;
   align?: "start" | "end";
+  // "up": for triggers pinned near the bottom of the viewport (like the
+  // sidebar's profile button) - opening downward there renders the menu
+  // past the bottom edge of the screen, invisible with no way to scroll
+  // to it, since this is an absolutely-positioned popover, not part of
+  // the page's normal scroll flow.
+  placement?: "down" | "up";
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -36,9 +43,9 @@ export function DropdownMenu({
       {open && (
         <div
           role="menu"
-          className={`absolute z-30 mt-2 min-w-[190px] animate-slide-up rounded-[var(--radius-md)] border border-border bg-surface p-1.5 shadow-[var(--shadow-md)] ${
+          className={`absolute z-30 min-w-[190px] animate-slide-up rounded-[var(--radius-md)] border border-border bg-surface p-1.5 shadow-[var(--shadow-md)] ${
             align === "end" ? "right-0" : "left-0"
-          }`}
+          } ${placement === "up" ? "bottom-full mb-2" : "mt-2"}`}
           onClick={() => setOpen(false)}
         >
           {children}
