@@ -64,6 +64,7 @@ export interface RoomDetail {
   my_role: MemberRole;
   my_member_id: string;
   channels: ChannelOut[];
+  video_room_token: string;
 }
 
 export interface InviteCreated {
@@ -236,6 +237,37 @@ export interface MusicLibraryResponse {
   tracks: MusicLibraryTrack[];
 }
 
+// ---- Video call: presence shared by both implementations, signaling
+// used only by the self-hosted WebRTC one (Jitsi handles its own) ----
+
+export type CallMode = "webrtc" | "jitsi";
+
+export interface WSCallPresence {
+  type: "call_presence";
+  mode: CallMode;
+  member_ids: string[];
+}
+
+export interface WSCallOffer {
+  type: "call_offer";
+  from_member_id: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
+export interface WSCallAnswer {
+  type: "call_answer";
+  from_member_id: string;
+  sdp: RTCSessionDescriptionInit;
+}
+
+export interface WSIceCandidate {
+  type: "ice_candidate";
+  from_member_id: string;
+  candidate: RTCIceCandidateInit;
+}
+
+export type CallSignalEvent = WSCallOffer | WSCallAnswer | WSIceCandidate;
+
 export type WSServerEvent =
   | WSReady
   | WSMessage
@@ -253,7 +285,11 @@ export type WSServerEvent =
   | WSRoomEnded
   | WSError
   | WSMusicStarted
-  | WSMusicStopped;
+  | WSMusicStopped
+  | WSCallPresence
+  | WSCallOffer
+  | WSCallAnswer
+  | WSIceCandidate;
 
 export class ApiError extends Error {
   code: string;

@@ -5,6 +5,7 @@ DB enums) so the exact same models work against SQLite in tests and
 against real PostgreSQL in production via DATABASE_URL.
 """
 
+import secrets
 import uuid
 from datetime import datetime, timezone
 
@@ -22,6 +23,14 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 def new_id() -> str:
     return uuid.uuid4().hex
+
+
+def new_video_room_token() -> str:
+    # Unrelated to the room's own `code` (short, human-typed) - this is
+    # only ever used as a Jitsi room name, so it needs to be unguessable
+    # rather than memorable: anyone who knows it can join that room's
+    # video call on Jitsi's public server with no further auth.
+    return secrets.token_hex(16)
 
 
 def utcnow() -> datetime:
@@ -57,6 +66,7 @@ class Room(Base):
     invite_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
     owner_member_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     owner_recovery_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    video_room_token: Mapped[str] = mapped_column(String(32), nullable=False, default=new_video_room_token)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)

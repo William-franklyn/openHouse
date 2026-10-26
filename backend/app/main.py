@@ -313,6 +313,11 @@ def register_routes(app: FastAPI) -> None:
             "my_role": actor.role,
             "my_member_id": actor.id,
             "channels": [{"id": c.id, "name": c.name} for c in channels],
+            # Not on room_public() (above) - that's also returned by the
+            # unauthenticated preview-before-joining route, and this is a
+            # secret: anyone who has it can join this room's Jitsi call
+            # with no further auth.
+            "video_room_token": room.video_room_token,
         }
 
     @app.patch("/api/rooms/{room_id}")
@@ -568,6 +573,13 @@ def register_routes(app: FastAPI) -> None:
                 if music_state is not None:
                     await websocket.send_json({"type": "music_started", **music_state})
 
+                for mode in realtime.CALL_MODES:
+                    member_ids = await realtime.call_presence_snapshot(redis_client, room_id, mode)
+                    if member_ids:
+                        await websocket.send_json(
+                            {"type": "call_presence", "mode": mode, "member_ids": member_ids}
+                        )
+
                 while True:
                     raw = await _receive_json(websocket)
                     if raw is None:
@@ -591,6 +603,10 @@ def register_routes(app: FastAPI) -> None:
                         room = await session.get(Room, room_id)
                         if room is not None:
                             await realtime._publish_presence(session, redis_client, hub, room)
+                    except Exception:
+                        pass
+                    try:
+                        await realtime.cleanup_call_presence_on_disconnect(redis_client, hub, room_id, member_id)
                     except Exception:
                         pass
 

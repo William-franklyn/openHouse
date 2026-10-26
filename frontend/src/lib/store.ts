@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { ChannelOut, MemberRole, MessageOut, PresenceMember } from "./types";
+import { CallMode, CallSignalEvent, ChannelOut, MemberRole, MessageOut, PresenceMember } from "./types";
 
 export type ConnectionStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
@@ -20,6 +20,7 @@ interface RoomStoreState {
   myMemberId: string | null;
   myRole: MemberRole | null;
   myName: string | null;
+  videoRoomToken: string | null;
   channels: ChannelOut[];
   activeChannelId: string | null;
   messagesByChannel: Record<string, MessageOut[]>;
@@ -32,6 +33,12 @@ interface RoomStoreState {
   roomEnded: boolean;
   lastError: { code: string; message: string } | null;
   music: RoomMusicState | null;
+  callPresence: Record<CallMode, string[]>;
+  // Raw WebRTC signaling (offer/answer/ICE) - a queue, not an ephemeral
+  // "last value" slot like everything else above: ICE candidates can
+  // arrive in a rapid burst, and overwriting one with the next would
+  // silently drop it instead of just showing a stale value.
+  callSignalQueue: CallSignalEvent[];
 
   initRoom: (params: {
     roomId: string;
@@ -39,6 +46,7 @@ interface RoomStoreState {
     role: MemberRole;
     name: string;
     channels: ChannelOut[];
+    videoRoomToken: string;
   }) => void;
   setStatus: (status: ConnectionStatus) => void;
   setActiveChannel: (channelId: string) => void;
@@ -57,6 +65,9 @@ interface RoomStoreState {
   setError: (code: string, message: string) => void;
   clearError: () => void;
   setMusic: (music: RoomMusicState | null) => void;
+  setCallPresence: (mode: CallMode, memberIds: string[]) => void;
+  pushCallSignal: (event: CallSignalEvent) => void;
+  clearCallSignals: () => void;
   reset: () => void;
 }
 
@@ -78,6 +89,9 @@ const initialState = {
   roomEnded: false,
   lastError: null,
   music: null,
+  videoRoomToken: null,
+  callPresence: { webrtc: [], jitsi: [] } as Record<CallMode, string[]>,
+  callSignalQueue: [],
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
@@ -91,7 +105,7 @@ function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
 export const useRoomStore = create<RoomStoreState>((set, get) => ({
   ...initialState,
 
-  initRoom: ({ roomId, memberId, role, name, channels }) =>
+  initRoom: ({ roomId, memberId, role, name, channels, videoRoomToken }) =>
     set({
       roomId,
       myMemberId: memberId,
@@ -99,6 +113,7 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
       myName: name,
       channels,
       activeChannelId: channels[0]?.id ?? null,
+      videoRoomToken,
     }),
 
   setStatus: (status) => set({ status }),
@@ -173,6 +188,14 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
   clearError: () => set({ lastError: null }),
 
   setMusic: (music) => set({ music }),
+
+  setCallPresence: (mode, memberIds) =>
+    set((state) => ({ callPresence: { ...state.callPresence, [mode]: memberIds } })),
+
+  pushCallSignal: (event) =>
+    set((state) => ({ callSignalQueue: [...state.callSignalQueue, event] })),
+
+  clearCallSignals: () => set({ callSignalQueue: [] }),
 
   reset: () => set(initialState),
 }));

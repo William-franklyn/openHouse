@@ -96,6 +96,14 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
       case "music_stopped":
         store.setMusic(null);
         break;
+      case "call_presence":
+        store.setCallPresence(event.mode, event.member_ids);
+        break;
+      case "call_offer":
+      case "call_answer":
+      case "ice_candidate":
+        store.pushCallSignal(event);
+        break;
     }
   }, []);
 

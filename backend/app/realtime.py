@@ -152,6 +152,39 @@ async def music_snapshot(redis, room_id: str) -> dict | None:
         return None
 
 
+# ---- Video call presence ----
+# Two independent video-calling implementations (self-hosted WebRTC mesh
+# and an embedded Jitsi Meet call) are both live so they can be A/B tested
+# side by side - presence is tracked per `mode` so "who's in the WebRTC
+# call" and "who's in the Jitsi call" never get conflated into one count,
+# since someone on one can't actually see/hear someone on the other.
+CALL_MODES = ("webrtc", "jitsi")
+
+
+def _call_key(room_id: str, mode: str) -> str:
+    return f"call_presence:{mode}:{room_id}"
+
+
+async def call_presence_snapshot(redis, room_id: str, mode: str) -> list[str]:
+    raw_ids = await redis.smembers(_call_key(room_id, mode))
+    return [_decode(v) for v in raw_ids]
+
+
+async def _publish_call_presence(redis, hub, room_id: str, mode: str) -> None:
+    member_ids = await call_presence_snapshot(redis, room_id, mode)
+    await hub.publish(room_id, {"type": "call_presence", "mode": mode, "member_ids": member_ids})
+
+
+async def cleanup_call_presence_on_disconnect(redis, hub, room_id: str, member_id: str) -> None:
+    """Mirrors hub.presence_remove on disconnect - a dropped connection
+    (tab closed, network loss) never gets a chance to send leave_call, so
+    without this a departed member would linger in the count forever."""
+    for mode in CALL_MODES:
+        removed = await redis.srem(_call_key(room_id, mode), member_id)
+        if removed:
+            await _publish_call_presence(redis, hub, room_id, mode)
+
+
 async def post_system_message(session, settings, hub, room, text: str) -> None:
     """A WhatsApp-style "X joined"/"X left" notice: a real, persisted
     message (kind="system") in the room's general channel, so it shows up
@@ -385,6 +418,51 @@ async def handle_stop_music(session, settings, redis, hub, room, actor, data):
     await hub.publish(room.id, {"type": "music_stopped"})
 
 
+def _require_call_mode(data: dict) -> str:
+    mode = data.get("mode")
+    if mode not in CALL_MODES:
+        raise DomainError("bad_request", "Unknown call mode.")
+    return mode
+
+
+async def handle_join_call(session, settings, redis, hub, room, actor, data):
+    # No role check, same as sending a message - joining a call is a
+    # normal member action, not a mod/owner privilege.
+    mode = _require_call_mode(data)
+    await redis.sadd(_call_key(room.id, mode), actor.id)
+    await _publish_call_presence(redis, hub, room.id, mode)
+
+
+async def handle_leave_call(session, settings, redis, hub, room, actor, data):
+    mode = _require_call_mode(data)
+    await redis.srem(_call_key(room.id, mode), actor.id)
+    await _publish_call_presence(redis, hub, room.id, mode)
+
+
+async def _relay_to_peer(hub, room, actor, data, event_type: str, payload_key: str) -> None:
+    target_id = data.get("to_member_id")
+    payload = data.get(payload_key)
+    if not target_id or payload is None:
+        raise DomainError("bad_request", f"Missing to_member_id or {payload_key}.")
+    await hub.publish(
+        room.id,
+        {"type": event_type, "from_member_id": actor.id, payload_key: payload},
+        to_member_id=target_id,
+    )
+
+
+async def handle_call_offer(session, settings, redis, hub, room, actor, data):
+    await _relay_to_peer(hub, room, actor, data, "call_offer", "sdp")
+
+
+async def handle_call_answer(session, settings, redis, hub, room, actor, data):
+    await _relay_to_peer(hub, room, actor, data, "call_answer", "sdp")
+
+
+async def handle_call_ice_candidate(session, settings, redis, hub, room, actor, data):
+    await _relay_to_peer(hub, room, actor, data, "ice_candidate", "candidate")
+
+
 async def handle_leave(session, settings, redis, hub, room, actor, data):
     display_name = actor.display_name
     await members_mod.leave_room(session, actor)
@@ -412,6 +490,11 @@ HANDLERS = {
     "leave": handle_leave,
     "start_music": handle_start_music,
     "stop_music": handle_stop_music,
+    "join_call": handle_join_call,
+    "leave_call": handle_leave_call,
+    "call_offer": handle_call_offer,
+    "call_answer": handle_call_answer,
+    "call_ice_candidate": handle_call_ice_candidate,
 }
 
 

@@ -23,6 +23,8 @@ import { TerminalStateOverlay } from "./TerminalStateOverlay";
 import { CreateChannelModal } from "./CreateChannelModal";
 import { MusicPlayer } from "./MusicPlayer";
 import { MusicPickerModal } from "./MusicPickerModal";
+import { WebRTCCallModal } from "./WebRTCCallModal";
+import { JitsiCallModal } from "./JitsiCallModal";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
@@ -35,6 +37,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [showInvite, setShowInvite] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showMusicPicker, setShowMusicPicker] = useState(false);
+  const [showWebRTCCall, setShowWebRTCCall] = useState(false);
+  const [showJitsiCall, setShowJitsiCall] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ memberId?: string; messageId?: string } | null>(null);
 
   const { send } = useRoomSocket(session?.token ?? null);
@@ -42,6 +46,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const status = useRoomStore((s) => s.status);
   const activeChannelId = useRoomStore((s) => s.activeChannelId);
   const myRole = useRoomStore((s) => s.myRole);
+  const myMemberId = useRoomStore((s) => s.myMemberId);
+  const videoRoomToken = useRoomStore((s) => s.videoRoomToken);
   const ownershipOfferFrom = useRoomStore((s) => s.ownershipOfferFrom);
   const removedReason = useRoomStore((s) => s.removedReason);
   const roomDeletedMessage = useRoomStore((s) => s.roomDeletedMessage);
@@ -65,6 +71,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           role: detail.my_role,
           name: stored.name,
           channels: detail.channels,
+          videoRoomToken: detail.video_room_token,
         });
       })
       .catch((err) => {
@@ -153,6 +160,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
           onOpenSidebar={() => setShowSidebar(true)}
           onToggleMembers={() => setShowMembers((v) => !v)}
           membersOpen={showMembers}
+          onOpenWebRTCCall={() => setShowWebRTCCall(true)}
+          onOpenJitsiCall={() => setShowJitsiCall(true)}
         />
         <PinnedBanner />
         <MusicPlayer
@@ -244,6 +253,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
         token={session.token}
         onPicked={(pick) => send("start_music", pick)}
       />
+      {myMemberId && (
+        <WebRTCCallModal
+          open={showWebRTCCall}
+          onClose={() => setShowWebRTCCall(false)}
+          roomId={roomId}
+          myMemberId={myMemberId}
+          myName={session.name}
+          send={send}
+        />
+      )}
+      {videoRoomToken && (
+        <JitsiCallModal
+          open={showJitsiCall}
+          onClose={() => setShowJitsiCall(false)}
+          videoRoomToken={videoRoomToken}
+          myName={session.name}
+          send={send}
+        />
+      )}
     </div>
   );
 }
