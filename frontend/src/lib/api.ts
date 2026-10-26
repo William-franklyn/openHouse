@@ -7,6 +7,7 @@ import {
   HistoryResponse,
   InviteCreated,
   JoinResponse,
+  MusicLibraryResponse,
   RecoverResponse,
   ReportResponse,
   RoomDetail,
@@ -142,11 +143,11 @@ export const api = {
     roomId: string,
     token: string,
     file: File,
-    channelId: string
+    channelId?: string
   ): Promise<UploadResponse> {
     const form = new FormData();
     form.append("file", file);
-    form.append("channel_id", channelId);
+    if (channelId) form.append("channel_id", channelId);
     const resp = await fetch(`${apiBaseUrl()}/api/rooms/${roomId}/files`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
@@ -161,6 +162,10 @@ export const api = {
 
   downloadFile(fileId: string, token: string) {
     return request<DownloadResponse>(`/api/files/${fileId}`, { token });
+  },
+
+  musicLibrary() {
+    return request<MusicLibraryResponse>("/api/music-library");
   },
 
   report(

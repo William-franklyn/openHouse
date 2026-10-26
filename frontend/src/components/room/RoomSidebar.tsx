@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Hash, Plus, ChevronsUpDown, UserPlus, Settings, LogOut, X } from "lucide-react";
+import { Hash, Plus, ChevronsUpDown, UserPlus, Settings, Music, LogOut, X } from "lucide-react";
 import { useRoomStore } from "@/lib/store";
 import { Avatar } from "@/components/ui/Avatar";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -19,6 +19,7 @@ function SidebarContent({
   onOpenCreateChannel,
   onInvite,
   onSettings,
+  onOpenMusicPicker,
   onLogout,
 }: {
   roomName: string;
@@ -30,6 +31,7 @@ function SidebarContent({
   onOpenCreateChannel: () => void;
   onInvite: () => void;
   onSettings: () => void;
+  onOpenMusicPicker: () => void;
   onLogout: () => void;
 }) {
   const channels = useRoomStore((s) => s.channels);
@@ -127,6 +129,11 @@ function SidebarContent({
             </DropdownItem>
           )}
           {canManage && (
+            <DropdownItem icon={<Music size={15} />} onClick={onOpenMusicPicker}>
+              Play music
+            </DropdownItem>
+          )}
+          {canManage && (
             <DropdownItem icon={<Settings size={15} />} onClick={onSettings}>
               Room settings
             </DropdownItem>
@@ -152,6 +159,7 @@ export function RoomSidebar({
   onOpenCreateChannel,
   onInvite,
   onSettings,
+  onOpenMusicPicker,
   onLogout,
 }: {
   roomName: string;
@@ -164,9 +172,10 @@ export function RoomSidebar({
   onOpenCreateChannel: () => void;
   onInvite: () => void;
   onSettings: () => void;
+  onOpenMusicPicker: () => void;
   onLogout: () => void;
 }) {
-  const props = { roomName, myName, myRole, canInvite, canManage, onCloseMobile, onOpenCreateChannel, onInvite, onSettings, onLogout };
+  const props = { roomName, myName, myRole, canInvite, canManage, onCloseMobile, onOpenCreateChannel, onInvite, onSettings, onOpenMusicPicker, onLogout };
 
   return (
     <>

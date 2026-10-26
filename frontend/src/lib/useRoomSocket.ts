@@ -81,6 +81,21 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
       case "error":
         store.setError(event.code, event.message);
         break;
+      case "music_started":
+        store.setMusic({
+          source: event.source,
+          fileId: event.file_id,
+          url: event.url,
+          attribution: event.attribution,
+          filename: event.filename,
+          startedByMemberId: event.started_by_member_id,
+          startedByName: event.started_by_name,
+          startedAtMs: event.started_at_ms,
+        });
+        break;
+      case "music_stopped":
+        store.setMusic(null);
+        break;
     }
   }, []);
 

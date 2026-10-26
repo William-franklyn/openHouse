@@ -3,6 +3,17 @@ import { ChannelOut, MemberRole, MessageOut, PresenceMember } from "./types";
 
 export type ConnectionStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
+export interface RoomMusicState {
+  source: "upload" | "library";
+  fileId?: string;
+  url?: string;
+  attribution?: string;
+  filename: string;
+  startedByMemberId: string;
+  startedByName: string;
+  startedAtMs: number;
+}
+
 interface RoomStoreState {
   status: ConnectionStatus;
   roomId: string | null;
@@ -20,6 +31,7 @@ interface RoomStoreState {
   roomDeletedMessage: string | null;
   roomEnded: boolean;
   lastError: { code: string; message: string } | null;
+  music: RoomMusicState | null;
 
   initRoom: (params: {
     roomId: string;
@@ -44,6 +56,7 @@ interface RoomStoreState {
   setRoomEnded: () => void;
   setError: (code: string, message: string) => void;
   clearError: () => void;
+  setMusic: (music: RoomMusicState | null) => void;
   reset: () => void;
 }
 
@@ -64,6 +77,7 @@ const initialState = {
   roomDeletedMessage: null,
   roomEnded: false,
   lastError: null,
+  music: null,
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
@@ -157,6 +171,8 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
   setError: (code, message) => set({ lastError: { code, message } }),
 
   clearError: () => set({ lastError: null }),
+
+  setMusic: (music) => set({ music }),
 
   reset: () => set(initialState),
 }));

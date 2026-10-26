@@ -60,6 +60,14 @@ class Settings(BaseSettings):
         "zip", "webm", "mp3", "wav", "ogg", "m4a",
     )
 
+    # ---- Room DJ ----
+    # Narrower than ALLOWED_FILE_EXTENSIONS above - stops start_music from
+    # being pointed at an uploaded .pdf's file_id.
+    MUSIC_EXTENSIONS: tuple = ("mp3", "wav", "ogg", "m4a", "webm")
+    # Safety net: if stop_music never fires (crash, etc.), the Redis key
+    # expires on its own rather than leaving "now playing" stuck forever.
+    ROOM_MUSIC_TTL_SECONDS: int = 600
+
     # ---- Rate limits ----
     MESSAGE_RATE_LIMIT: int = 10
     MESSAGE_RATE_WINDOW_SECONDS: int = 10

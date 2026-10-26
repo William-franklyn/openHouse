@@ -21,6 +21,8 @@ import { RoomSettingsPanel } from "./RoomSettingsPanel";
 import { OwnershipOfferModal } from "./OwnershipOfferModal";
 import { TerminalStateOverlay } from "./TerminalStateOverlay";
 import { CreateChannelModal } from "./CreateChannelModal";
+import { MusicPlayer } from "./MusicPlayer";
+import { MusicPickerModal } from "./MusicPickerModal";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
@@ -32,6 +34,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [showMusicPicker, setShowMusicPicker] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ memberId?: string; messageId?: string } | null>(null);
 
   const { send } = useRoomSocket(session?.token ?? null);
@@ -141,6 +144,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onOpenCreateChannel={() => setShowCreateChannel(true)}
         onInvite={() => setShowInvite(true)}
         onSettings={() => setShowSettings(true)}
+        onOpenMusicPicker={() => setShowMusicPicker(true)}
         onLogout={handleLogout}
       />
 
@@ -151,6 +155,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
           membersOpen={showMembers}
         />
         <PinnedBanner />
+        <MusicPlayer
+          token={session.token}
+          canManage={canManage}
+          onStop={() => send("stop_music")}
+        />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -227,6 +236,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
           send("create_channel", { name });
           setShowCreateChannel(false);
         }}
+      />
+      <MusicPickerModal
+        open={showMusicPicker}
+        onClose={() => setShowMusicPicker(false)}
+        roomId={roomId}
+        token={session.token}
+        onPicked={(pick) => send("start_music", pick)}
       />
     </div>
   );

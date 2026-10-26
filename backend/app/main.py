@@ -16,6 +16,7 @@ from app import files as files_mod
 from app import members as members_mod
 from app import messages as messages_mod
 from app import metrics as metrics_mod
+from app import music_library
 from app import realtime
 from app import rooms as rooms_mod
 from app import safety
@@ -256,6 +257,12 @@ def register_routes(app: FastAPI) -> None:
     async def preview_room_route(code: str, session=Depends(get_session)):
         room = await rooms_mod.get_room_by_code(session, code)
         return room_public(room, await active_member_count(session, room.id))
+
+    @app.get("/api/music-library")
+    async def music_library_route():
+        # Public and unauthenticated like preview_room_route above - this
+        # is static, non-sensitive catalog data, not tied to any room.
+        return {"tracks": music_library.list_tracks()}
 
     @app.post("/api/rooms/{code}/join")
     async def join_room_route(
@@ -538,6 +545,10 @@ def register_routes(app: FastAPI) -> None:
                         )
 
                 await realtime._publish_presence(session, redis_client, hub, room)
+
+                music_state = await realtime.music_snapshot(redis_client, room_id)
+                if music_state is not None:
+                    await websocket.send_json({"type": "music_started", **music_state})
 
                 while True:
                     raw = await _receive_json(websocket)

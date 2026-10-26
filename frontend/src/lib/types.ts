@@ -207,6 +207,35 @@ export interface WSError {
   message: string;
 }
 
+export interface WSMusicStarted {
+  type: "music_started";
+  source: "upload" | "library";
+  file_id?: string;
+  url?: string;
+  attribution?: string;
+  filename: string;
+  started_by_member_id: string;
+  started_by_name: string;
+  started_at_ms: number;
+}
+
+export interface WSMusicStopped {
+  type: "music_stopped";
+}
+
+export interface MusicLibraryTrack {
+  id: string;
+  title: string;
+  artist: string;
+  license: string;
+  license_url: string;
+  url: string;
+}
+
+export interface MusicLibraryResponse {
+  tracks: MusicLibraryTrack[];
+}
+
 export type WSServerEvent =
   | WSReady
   | WSMessage
@@ -222,7 +251,9 @@ export type WSServerEvent =
   | WSRemoved
   | WSRoomDeleted
   | WSRoomEnded
-  | WSError;
+  | WSError
+  | WSMusicStarted
+  | WSMusicStopped;
 
 export class ApiError extends Error {
   code: string;

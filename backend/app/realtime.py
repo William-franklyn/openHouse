@@ -12,11 +12,14 @@ depends on.
 
 import asyncio
 import json
+import time
 
 from sqlalchemy import select
 
+from app import files as files_mod
 from app import members as members_mod
 from app import messages as messages_mod
+from app import music_library
 from app import rooms as rooms_mod
 from app.errors import DomainError
 from app.models import Channel, Member, Message
@@ -129,6 +132,24 @@ async def presence_snapshot(session, redis, room_id: str) -> list[dict]:
                 {"member_id": member.id, "name": member.display_name, "role": member.role}
             )
     return online
+
+
+def _music_key(room_id: str) -> str:
+    return f"room_music:{room_id}"
+
+
+async def music_snapshot(redis, room_id: str) -> dict | None:
+    """Current room-music state, if any is playing - same role as
+    presence_snapshot: read fresh on every connect so a late joiner or a
+    reconnect gets caught up, not just whoever was already listening when
+    the room-wide broadcast went out."""
+    raw = await redis.get(_music_key(room_id))
+    if raw is None:
+        return None
+    try:
+        return json.loads(_decode(raw))
+    except (TypeError, ValueError):
+        return None
 
 
 async def post_system_message(session, settings, hub, room, text: str) -> None:
@@ -321,6 +342,49 @@ async def handle_rename(session, settings, redis, hub, room, actor, data):
     await _publish_presence(session, redis, hub, room)
 
 
+async def handle_start_music(session, settings, redis, hub, room, actor, data):
+    if actor.role not in ("owner", "mod"):
+        raise DomainError("not_allowed", "Only the owner or a moderator can play music.")
+
+    library_track_id = data.get("library_track_id")
+    file_id = data.get("file_id")
+
+    if library_track_id:
+        track = music_library.get_track(library_track_id)
+        if track is None:
+            raise DomainError("bad_request", "Unknown library track.")
+        state = {
+            "source": "library",
+            "url": track["url"],
+            "filename": track["title"],
+            "attribution": f'{track["artist"]} · {track["license"]}',
+        }
+    elif file_id:
+        asset = await files_mod.get_file_or_404(session, room.id, file_id)
+        if files_mod.file_extension(asset.filename) not in settings.MUSIC_EXTENSIONS:
+            raise DomainError("file_type", "That file isn't a playable audio file.")
+        state = {"source": "upload", "file_id": asset.id, "filename": asset.filename}
+    else:
+        raise DomainError("bad_request", "No file specified.")
+
+    # Overwrites unconditionally - starting new music while something is
+    # already playing just replaces it, no special-case needed. Every
+    # connected client reloads on the fresh broadcast below.
+    state["started_by_member_id"] = actor.id
+    state["started_by_name"] = actor.display_name
+    state["started_at_ms"] = int(time.time() * 1000)
+
+    await redis.set(_music_key(room.id), json.dumps(state), ex=settings.ROOM_MUSIC_TTL_SECONDS)
+    await hub.publish(room.id, {"type": "music_started", **state})
+
+
+async def handle_stop_music(session, settings, redis, hub, room, actor, data):
+    if actor.role not in ("owner", "mod"):
+        raise DomainError("not_allowed", "Only the owner or a moderator can stop the music.")
+    await redis.delete(_music_key(room.id))
+    await hub.publish(room.id, {"type": "music_stopped"})
+
+
 async def handle_leave(session, settings, redis, hub, room, actor, data):
     display_name = actor.display_name
     await members_mod.leave_room(session, actor)
@@ -346,6 +410,8 @@ HANDLERS = {
     "create_channel": handle_create_channel,
     "rename": handle_rename,
     "leave": handle_leave,
+    "start_music": handle_start_music,
+    "stop_music": handle_stop_music,
 }
 
 
