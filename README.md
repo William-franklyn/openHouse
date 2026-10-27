@@ -6,7 +6,7 @@ Openhouse turns any gathering — a hackathon, a conference, a classroom, a caf�
 
 > 🔑 **The core idea:** a Room is a *temporary, disposable chat room tied to a moment*, not a permanent social network. It lives as long as it's useful, and anyone can hand off the keys before they leave.
 
-Founders: **William Mahunda** and **Mike Maeda**
+Founder: **William Mahunda**
 
 ---
 

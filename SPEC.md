@@ -10,7 +10,7 @@ Openhouse lets anyone create a **Room**: a group chat for one place or one momen
 
 **Wi-Fi is only used as a sign.** A host can rename their phone hotspot to something like `Openhouse 4F7K2`. People nearby see it in their Wi-Fi list, but **nobody needs to connect to it**. They just open Openhouse and type the code.
 
-Founders: William Mahunda and Mike Maeda
+Founder: William Mahunda
 Status: **MVP (v0.1)** — backend-first pass. See "Current implementation status" below.
 First markets: **hackathons and conferences**, then **college campuses**, then **cafés/restaurants and camps** (adults only).
 
