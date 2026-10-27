@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     # handles the normal case, this just bounds how long a call's presence
     # keys can possibly survive a crash/bug in that cleanup path.
     CALL_TTL_SECONDS: int = 600
+    # STUN alone only works when at least one peer is reachable directly -
+    # it does nothing for two people each behind a restrictive/symmetric
+    # NAT (the common "different networks" case). TURN relays the actual
+    # media when no direct path exists. None disables it (falls back to
+    # STUN-only) - local dev doesn't need a real Metered account.
+    METERED_API_KEY: str | None = None
+    METERED_SUBDOMAIN: str = "openhouse"
 
     # ---- Rate limits ----
     MESSAGE_RATE_LIMIT: int = 10

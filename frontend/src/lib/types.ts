@@ -242,6 +242,10 @@ export interface MusicLibraryResponse {
 // members separately clicking a generic "join" button had no guarantee
 // they'd land in the same meeting, which is exactly what call_id fixes. ----
 
+export interface IceServersResponse {
+  iceServers: RTCIceServer[];
+}
+
 export interface WSCallPresence {
   type: "call_presence";
   call_id: string;

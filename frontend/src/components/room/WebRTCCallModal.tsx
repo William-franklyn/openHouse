@@ -36,6 +36,7 @@ export function WebRTCCallModal({
   callId,
   myMemberId,
   myName,
+  token,
   send,
 }: {
   open: boolean;
@@ -43,10 +44,11 @@ export function WebRTCCallModal({
   callId: string;
   myMemberId: string;
   myName: string;
+  token: string;
   send: (type: string, data?: Record<string, unknown>) => void;
 }) {
   const { joined, localStream, remoteStreams, muted, cameraOff, error, join, leave, toggleMute, toggleCamera } =
-    useVideoCallWebRTC(callId, myMemberId, send);
+    useVideoCallWebRTC(callId, myMemberId, token, send);
 
   if (!open) return null;
 

@@ -269,6 +269,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           callId={myCallId}
           myMemberId={myMemberId}
           myName={session.name}
+          token={session.token}
           send={send}
         />
       )}

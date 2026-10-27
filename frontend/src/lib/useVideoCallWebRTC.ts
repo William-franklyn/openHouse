@@ -1,10 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "./api";
 import { useRoomStore } from "./store";
 import { CallSignalEvent } from "./types";
 
-const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+// Client-side fallback only - the backend already falls back to this same
+// STUN-only config if Metered isn't configured or its API has a bad
+// moment. STUN alone can't help two peers who are each behind a
+// restrictive/symmetric NAT (the "different networks" case), which is
+// exactly why join() fetches real TURN credentials before connecting.
+const STUN_ONLY: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 const EMPTY_PRESENCE: string[] = [];
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
@@ -19,7 +25,7 @@ interface Peer {
  * lexicographically smaller member_id is the one who creates the offer -
  * a simple, race-free rule so both sides can independently agree on who
  * initiates without any central coordinator or "who joined first" state. */
-export function useVideoCallWebRTC(callId: string, myMemberId: string, send: SendFn) {
+export function useVideoCallWebRTC(callId: string, myMemberId: string, token: string, send: SendFn) {
   const [joined, setJoined] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
@@ -30,6 +36,9 @@ export function useVideoCallWebRTC(callId: string, myMemberId: string, send: Sen
   const peersRef = useRef<Map<string, Peer>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const joinedRef = useRef(false);
+  // Fetched once per join() rather than per-peer-connection - every peer
+  // created during this call session reuses the same credentials.
+  const iceServersRef = useRef<RTCIceServer[]>(STUN_ONLY);
 
   const callPresence = useRoomStore((s) => s.callPresenceByCallId[callId] ?? EMPTY_PRESENCE);
   const callSignalQueue = useRoomStore((s) => s.callSignalQueue);
@@ -52,7 +61,7 @@ export function useVideoCallWebRTC(callId: string, myMemberId: string, send: Sen
       const existing = peersRef.current.get(peerId);
       if (existing) return existing;
 
-      const connection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const connection = new RTCPeerConnection({ iceServers: iceServersRef.current });
       localStreamRef.current?.getTracks().forEach((track) => {
         connection.addTrack(track, localStreamRef.current!);
       });
@@ -171,11 +180,21 @@ export function useVideoCallWebRTC(callId: string, myMemberId: string, send: Sen
       setLocalStream(stream);
       joinedRef.current = true;
       setJoined(true);
+
+      // Best-effort: a failed fetch here just means iceServersRef keeps
+      // its STUN_ONLY default rather than blocking the call from starting.
+      try {
+        const res = await api.turnCredentials(token);
+        iceServersRef.current = res.iceServers;
+      } catch {
+        iceServersRef.current = STUN_ONLY;
+      }
+
       send("join_call", { call_id: callId });
     } catch {
       setError("Couldn't access your camera/microphone. Check your browser permissions.");
     }
-  }, [send, callId]);
+  }, [send, callId, token]);
 
   const leave = useCallback(() => {
     if (!joinedRef.current) return;

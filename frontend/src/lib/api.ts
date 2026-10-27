@@ -5,6 +5,7 @@ import {
   CreateRoomResponse,
   DownloadResponse,
   HistoryResponse,
+  IceServersResponse,
   InviteCreated,
   JoinResponse,
   MusicLibraryResponse,
@@ -171,6 +172,10 @@ export const api = {
 
   downloadFile(fileId: string, token: string) {
     return request<DownloadResponse>(`/api/files/${fileId}`, { token });
+  },
+
+  turnCredentials(token: string) {
+    return request<IceServersResponse>("/api/turn-credentials", { token });
   },
 
   musicLibrary() {

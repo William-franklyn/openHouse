@@ -5,6 +5,7 @@ import json
 from contextlib import asynccontextmanager
 from datetime import datetime
 
+import httpx
 import redis.asyncio as redis_asyncio
 from fastapi import Depends, FastAPI, Header, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -472,6 +473,34 @@ def register_routes(app: FastAPI) -> None:
 
         return {"file_id": asset.id, "filename": asset.filename, "size": asset.size}
 
+    @app.get("/api/turn-credentials")
+    async def turn_credentials_route(
+        session=Depends(get_session),
+        settings: Settings = Depends(get_settings_dep),
+        token: str | None = Depends(bearer_token),
+    ):
+        # Not room-scoped (same reasoning as download_file_route below) -
+        # any valid session is enough, since this is just NAT-traversal
+        # config for WebRTC, not room data.
+        await members_mod.require_member(session, token)
+
+        stun_only = [{"urls": "stun:stun.l.google.com:19302"}]
+        if not settings.METERED_API_KEY:
+            return {"iceServers": stun_only}
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as http_client:
+                resp = await http_client.get(
+                    f"https://{settings.METERED_SUBDOMAIN}.metered.live/api/v1/turn/credentials",
+                    params={"apiKey": settings.METERED_API_KEY},
+                )
+                resp.raise_for_status()
+                return {"iceServers": resp.json()}
+        except Exception:
+            # A degraded call (STUN-only, may fail across strict NATs) beats
+            # no call at all because Metered's API had a bad moment.
+            return {"iceServers": stun_only}
+
     @app.get("/api/files/{file_id}")
     async def download_file_route(
         file_id: str,
@@ -479,7 +508,7 @@ def register_routes(app: FastAPI) -> None:
         storage: Storage = Depends(get_storage),
         token: str | None = Depends(bearer_token),
     ):
-        # The README's path for this route carries no room id (unlike every
+        # SPEC.md's path for this route carries no room id (unlike every
         # other member-scoped route) - the member's room comes from their
         # token, and the file has to belong to that same room.
         member = await members_mod.require_member(session, token)
