@@ -145,6 +145,23 @@ async def update_room_settings(
     return room
 
 
+async def set_local_mode(session, room: Room, enabled: bool, ip: str | None) -> Room:
+    """IP-only, not GPS - see models.Room.local_mode_ip. The owner must
+    enable this *from the network they want to allow* (their own hotspot,
+    or the venue/dorm's shared Wi-Fi); whoever's request IP matches at
+    join time gets in. Nothing here ever asks a joiner for their location."""
+    if not enabled:
+        room.local_mode_ip = None
+        await session.commit()
+        return room
+
+    if not ip or ip == "unknown":
+        raise DomainError("bad_request", "Couldn't read your network address to turn on Local mode.")
+    room.local_mode_ip = ip
+    await session.commit()
+    return room
+
+
 async def rotate_code(session, settings, room: Room) -> str:
     room.code = await _unique_code(session, settings)
     await session.commit()

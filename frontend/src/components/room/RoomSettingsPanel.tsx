@@ -34,6 +34,8 @@ export function RoomSettingsPanel({
   const [inviteBy, setInviteBy] = useState<"admins" | "members">("admins");
   const [endsAt, setEndsAt] = useState("");
   const [newCode, setNewCode] = useState<string | null>(null);
+  const [localMode, setLocalMode] = useState(room.local_mode);
+  const [togglingLocalMode, setTogglingLocalMode] = useState(false);
   const [showEnd, setShowEnd] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +79,21 @@ export function RoomSettingsPanel({
       setError(err instanceof ApiError ? err.message : "Couldn't update the room.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function toggleLocalMode() {
+    const next = !localMode;
+    setTogglingLocalMode(true);
+    setError(null);
+    try {
+      const updated = await api.setLocalMode(roomId, token, next);
+      setLocalMode(updated.local_mode);
+      onRoomUpdated(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't update Local mode.");
+    } finally {
+      setTogglingLocalMode(false);
     }
   }
 
@@ -140,6 +157,34 @@ export function RoomSettingsPanel({
             <option value="members">Any member</option>
           </Select>
         )}
+
+        <div className="rounded-[var(--radius-md)] border border-border bg-surface-muted p-3.5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Local mode</p>
+              <p className="mt-0.5 text-xs text-muted">
+                {localMode
+                  ? "On — only people on this same Wi-Fi/hotspot can join right now."
+                  : "Restrict joining to people on one Wi-Fi network or hotspot, right now."}
+              </p>
+            </div>
+            <Button
+              variant={localMode ? "danger" : "secondary"}
+              size="sm"
+              onClick={toggleLocalMode}
+              disabled={togglingLocalMode}
+            >
+              {localMode ? "Turn off" : "Turn on"}
+            </Button>
+          </div>
+          {!localMode && (
+            <p className="mt-2 text-xs text-muted">
+              Turn this on from the Wi-Fi or hotspot you want to allow — people elsewhere on the
+              code won&apos;t be able to join until you turn it off. Doesn&apos;t use anyone&apos;s
+              location, just whether they&apos;re on the same network.
+            </p>
+          )}
+        </div>
 
         <div>
           <label className="text-sm font-medium">Room code</label>

@@ -110,6 +110,13 @@ def get_hub(request: Request) -> Hub:
 
 
 def client_ip(request: Request) -> str:
+    # Behind Vercel (or any single-hop proxy) request.client.host is the
+    # proxy's own address, not the visitor's - the real one is the first
+    # entry in X-Forwarded-For. Matters now beyond rate limiting: Local
+    # mode's whole premise is comparing two *real* visitors' IPs.
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -162,6 +169,10 @@ class PatchRoomBody(BaseModel):
     ends_at: datetime | None = None
 
 
+class LocalModeBody(BaseModel):
+    enabled: bool
+
+
 class ReportBody(BaseModel):
     reason: str
     target_member_id: str | None = None
@@ -181,6 +192,10 @@ def room_public(room: Room, member_count: int) -> dict:
         "join_policy": room.join_policy,
         "invite_by": room.invite_by,
         "is_active": room.is_active(),
+        # Boolean only - the actual IP it's pinned to is never sent to any
+        # client, owner included, since there's no reason either side
+        # needs to see it.
+        "local_mode": room.local_mode_ip is not None,
     }
 
 
@@ -275,10 +290,11 @@ def register_routes(app: FastAPI) -> None:
         redis_client=Depends(get_redis),
         hub: Hub = Depends(get_hub),
     ):
-        await safety.check_join_rate(redis_client, settings, client_ip(request))
+        ip = client_ip(request)
+        await safety.check_join_rate(redis_client, settings, ip)
         room = await rooms_mod.get_room_by_code(session, code)
         result = await members_mod.join_room(
-            session, settings, room, body.name, body.over_18, body.invite_code, body.device_id
+            session, settings, room, body.name, body.over_18, body.invite_code, body.device_id, ip
         )
         if result["status"] == "active":
             await realtime.post_system_message(
@@ -349,6 +365,23 @@ def register_routes(app: FastAPI) -> None:
         room = await rooms_mod.get_room_or_404(session, room_id)
         new_code = await rooms_mod.rotate_code(session, settings, room)
         return {"code": new_code}
+
+    @app.post("/api/rooms/{room_id}/local-mode")
+    async def local_mode_route(
+        room_id: str,
+        body: LocalModeBody,
+        request: Request,
+        actor: Member = Depends(require_room_member),
+        session=Depends(get_session),
+    ):
+        if actor.role != "owner":
+            raise DomainError("not_allowed", "Only the owner can change Local mode.")
+        room = await rooms_mod.get_room_or_404(session, room_id)
+        # The owner must call this from the network they want to allow -
+        # their own hotspot, or the venue/dorm's shared Wi-Fi - since
+        # that's the IP every join request gets checked against.
+        room = await rooms_mod.set_local_mode(session, room, body.enabled, client_ip(request))
+        return room_public(room, await active_member_count(session, room_id))
 
     @app.post("/api/rooms/{room_id}/end")
     async def end_room_route(

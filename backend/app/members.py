@@ -77,11 +77,18 @@ async def join_room(
     over_18: bool,
     invite_code: str | None,
     device_hash_raw: str | None,
+    ip: str | None = None,
 ) -> dict:
     require_active(room)
 
     if not over_18:
         raise DomainError("bad_request", "You must be 18 or older to join.")
+
+    if room.local_mode_ip and ip != room.local_mode_ip:
+        raise DomainError(
+            "wrong_network",
+            "This room is only open right now to people on the same Wi-Fi/hotspot as its host.",
+        )
 
     if await _is_banned_device(session, room.id, device_hash_raw):
         raise DomainError("banned", "You have been banned from this room.")

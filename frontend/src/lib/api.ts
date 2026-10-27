@@ -122,6 +122,14 @@ export const api = {
     });
   },
 
+  setLocalMode(roomId: string, token: string, enabled: boolean) {
+    return request<RoomPublic>(`/api/rooms/${roomId}/local-mode`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
   deleteRoom(roomId: string, token: string) {
     return request<{ ok: true }>(`/api/rooms/${roomId}`, { method: "DELETE", token });
   },

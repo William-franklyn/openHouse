@@ -13,6 +13,9 @@ export interface RoomPublic {
   join_policy: JoinPolicy;
   invite_by: InviteBy | null;
   is_active: boolean;
+  // True if the owner restricted joining to people on their current
+  // Wi-Fi/hotspot (see RoomSettingsPanel). Never carries the actual IP.
+  local_mode: boolean;
 }
 
 export interface MemberOut {

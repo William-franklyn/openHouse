@@ -67,6 +67,13 @@ class Room(Base):
     owner_member_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     owner_recovery_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     video_room_token: Mapped[str] = mapped_column(String(32), nullable=False, default=new_video_room_token)
+    # Set when the owner turns on Local mode: the public IP their own
+    # request arrived from at that moment (see client_ip() in main.py -
+    # read from X-Forwarded-For behind a proxy). Null = off. Deliberately
+    # IP-only, not GPS - this never asks anyone for their location, which
+    # would be a real identifying signal in an app built around staying
+    # anonymous (see SPEC.md Decisions).
+    local_mode_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)

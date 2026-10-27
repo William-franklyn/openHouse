@@ -105,6 +105,12 @@ export function JoinClient({ code, invitePrefill }: { code: string; invitePrefil
         <p className="mt-3 text-xs text-muted">
           Be respectful. Reports go to the room&apos;s house owner and moderators, and the platform team.
         </p>
+        {preview.local_mode && (
+          <p className="mt-3 text-xs text-accent">
+            📶 This room is in Local mode right now — you&apos;ll need to be on the same Wi-Fi or
+            hotspot as the host to join.
+          </p>
+        )}
       </div>
 
       {existingSession && (

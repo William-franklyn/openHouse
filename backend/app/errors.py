@@ -19,6 +19,7 @@ HTTP_STATUS_BY_CODE = {
     "room_ended": 410,
     "bad_request": 400,
     "bad_token": 401,
+    "wrong_network": 403,
 }
 
 
