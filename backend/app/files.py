@@ -1,10 +1,10 @@
 """File uploads/downloads against S3-compatible storage.
 
-README section 8 describes a client-direct-to-S3 presigned-upload flow
+SPEC.md section 8 describes a client-direct-to-S3 presigned-upload flow
 (`POST /rooms/{id}/files` returns a signed PUT URL, then `POST
 /files/{fid}/complete`). We simplify to a single multipart upload
 through our own server instead (same pattern as our other project,
-Hotspot Hangout) — see README Decisions for why: it's one request
+Hotspot Hangout) — see SPEC.md Decisions for why: it's one request
 instead of two, and it's what we can actually exercise in tests without
 a frontend driving a real presigned PUT. Downloads still go through a
 genuine short-lived presigned GET URL, which is the part that actually

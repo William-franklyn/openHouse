@@ -152,7 +152,7 @@ async def rotate_code(session, settings, room: Room) -> str:
 
 
 async def delete_room(session, storage, room: Room) -> None:
-    """Hard-deletes messages/files/invites/pins now (see README Decisions:
+    """Hard-deletes messages/files/invites/pins now (see SPEC.md Decisions:
     the spec's 24h grace window needs a background scheduler we're not
     building for this pass, so cleanup is immediate instead)."""
     room.deleted_at = utcnow()

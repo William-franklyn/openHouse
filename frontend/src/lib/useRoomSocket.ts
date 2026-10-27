@@ -13,7 +13,7 @@ type SendFn = (type: string, data?: Record<string, unknown>) => void;
 /** Owns the WebSocket connection for one room: auth + resume on connect,
  * dispatches every server event into the Zustand store, and reconnects
  * with exponential backoff (1s, 2s, 4s... capped at 15s) on any
- * unexpected close, per the README's reconnect requirement. */
+ * unexpected close, per SPEC.md's reconnect requirement. */
 export function useRoomSocket(token: string | null): { send: SendFn } {
   const wsRef = useRef<WebSocket | null>(null);
   const attemptRef = useRef(0);

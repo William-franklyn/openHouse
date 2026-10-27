@@ -1,4 +1,4 @@
-"""SQLAlchemy models for the data model in README section 6.
+"""SQLAlchemy models for the data model in SPEC.md section 6.
 
 Deliberately avoids Postgres-only column types (no ARRAY/JSONB, no native
 DB enums) so the exact same models work against SQLite in tests and

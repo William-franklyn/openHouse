@@ -6,7 +6,7 @@ Every Hub instance (one per server process) subscribes to that channel and
 only delivers to the sockets it personally holds — including its own
 publishes, since a subscriber always receives its own published messages
 too. That gives us both local delivery and multi-instance fan-out through
-one code path, which is what README test #11 (two instances, one message)
+one code path, which is what SPEC.md test #11 (two instances, one message)
 depends on.
 """
 

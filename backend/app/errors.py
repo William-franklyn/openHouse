@@ -1,7 +1,7 @@
 """Shared domain error type.
 
 Business logic in rooms.py/members.py/messages.py/safety.py/files.py
-raises DomainError with one of the README's error codes. The REST layer
+raises DomainError with one of SPEC.md's error codes. The REST layer
 in main.py turns it into an HTTP response; the WebSocket layer in
 realtime.py turns it into an `error` event. The logic itself doesn't
 know or care which transport is calling it.

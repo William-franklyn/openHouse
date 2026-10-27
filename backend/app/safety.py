@@ -2,7 +2,7 @@
 
 Rate limiting is a plain fixed-window counter in Redis (INCR + EXPIRE on
 first hit). It's not as smooth as a sliding window, but it's simple,
-correct for the README's "N per M seconds" limits, and works identically
+correct for SPEC.md's "N per M seconds" limits, and works identically
 against real Redis or fakeredis in tests.
 """
 
