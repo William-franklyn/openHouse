@@ -11,6 +11,7 @@ import {
   RecoverResponse,
   ReportResponse,
   RoomDetail,
+  RoomPhotosResponse,
   RoomPublic,
   UploadResponse,
 } from "./types";
@@ -141,6 +142,10 @@ export const api = {
       `/api/rooms/${roomId}/channels/${channelId}/messages${qs}`,
       { token }
     );
+  },
+
+  roomPhotos(roomId: string, token: string) {
+    return request<RoomPhotosResponse>(`/api/rooms/${roomId}/photos`, { token });
   },
 
   async uploadFile(

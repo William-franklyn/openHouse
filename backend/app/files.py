@@ -16,9 +16,10 @@ import re
 
 import boto3
 from botocore.client import Config
+from sqlalchemy import select
 
 from app.errors import DomainError
-from app.models import FileAsset, Member, new_id, utcnow
+from app.models import Channel, FileAsset, Member, Message, new_id, utcnow
 
 
 def sanitize_filename(name: str) -> str:
@@ -149,3 +150,23 @@ async def get_file_or_404(session, room_id: str, file_id: str) -> FileAsset:
 
 def download_url(storage: Storage, asset: FileAsset, expires_seconds: int = 300) -> str:
     return storage.presigned_get_url(asset.storage_key, asset.filename, expires_seconds)
+
+
+async def list_room_photos(session, room_id: str) -> list[tuple[Message, FileAsset]]:
+    """Every image shared as a chat message anywhere in the room, across
+    all channels - the Photo Wall's data source. Room-DJ-uploaded audio
+    never qualifies (not an image mime type), and neither does a file
+    uploaded without a channel_id (no Message row to join through)."""
+    result = await session.execute(
+        select(Message, FileAsset)
+        .join(Channel, Message.channel_id == Channel.id)
+        .join(FileAsset, Message.file_id == FileAsset.id)
+        .where(
+            Channel.room_id == room_id,
+            Message.kind == "file",
+            Message.deleted_at.is_(None),
+            FileAsset.mime.like("image/%"),
+        )
+        .order_by(Message.created_at.asc())
+    )
+    return list(result.all())
