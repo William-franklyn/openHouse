@@ -24,7 +24,9 @@ import { CreateChannelModal } from "./CreateChannelModal";
 import { MusicPlayer } from "./MusicPlayer";
 import { MusicPickerModal } from "./MusicPickerModal";
 import { WebRTCCallModal } from "./WebRTCCallModal";
-import { JitsiCallModal } from "./JitsiCallModal";
+import { StartCallModal } from "./StartCallModal";
+import { IncomingCallToast } from "./IncomingCallToast";
+import { PhotoWallModal } from "./PhotoWallModal";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
@@ -37,8 +39,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [showInvite, setShowInvite] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showMusicPicker, setShowMusicPicker] = useState(false);
-  const [showWebRTCCall, setShowWebRTCCall] = useState(false);
-  const [showJitsiCall, setShowJitsiCall] = useState(false);
+  const [showStartCall, setShowStartCall] = useState(false);
+  const [showPhotoWall, setShowPhotoWall] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ memberId?: string; messageId?: string } | null>(null);
 
   const { send } = useRoomSocket(session?.token ?? null);
@@ -47,7 +49,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const activeChannelId = useRoomStore((s) => s.activeChannelId);
   const myRole = useRoomStore((s) => s.myRole);
   const myMemberId = useRoomStore((s) => s.myMemberId);
-  const videoRoomToken = useRoomStore((s) => s.videoRoomToken);
+  const myCallId = useRoomStore((s) => s.myCallId);
   const ownershipOfferFrom = useRoomStore((s) => s.ownershipOfferFrom);
   const removedReason = useRoomStore((s) => s.removedReason);
   const roomDeletedMessage = useRoomStore((s) => s.roomDeletedMessage);
@@ -71,7 +73,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
           role: detail.my_role,
           name: stored.name,
           channels: detail.channels,
-          videoRoomToken: detail.video_room_token,
         });
       })
       .catch((err) => {
@@ -160,8 +161,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
           onOpenSidebar={() => setShowSidebar(true)}
           onToggleMembers={() => setShowMembers((v) => !v)}
           membersOpen={showMembers}
-          onOpenWebRTCCall={() => setShowWebRTCCall(true)}
-          onOpenJitsiCall={() => setShowJitsiCall(true)}
+          onOpenStartCall={() => setShowStartCall(true)}
+          onOpenPhotoWall={() => setShowPhotoWall(true)}
         />
         <PinnedBanner />
         <MusicPlayer
@@ -254,24 +255,30 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onPicked={(pick) => send("start_music", pick)}
       />
       {myMemberId && (
+        <StartCallModal
+          open={showStartCall}
+          onClose={() => setShowStartCall(false)}
+          myMemberId={myMemberId}
+          onStart={(inviteeIds) => send("start_call", { invitee_ids: inviteeIds })}
+        />
+      )}
+      {myMemberId && myCallId && (
         <WebRTCCallModal
-          open={showWebRTCCall}
-          onClose={() => setShowWebRTCCall(false)}
-          roomId={roomId}
+          open
+          onClose={() => useRoomStore.getState().setMyCallId(null)}
+          callId={myCallId}
           myMemberId={myMemberId}
           myName={session.name}
           send={send}
         />
       )}
-      {videoRoomToken && (
-        <JitsiCallModal
-          open={showJitsiCall}
-          onClose={() => setShowJitsiCall(false)}
-          videoRoomToken={videoRoomToken}
-          myName={session.name}
-          send={send}
-        />
-      )}
+      <IncomingCallToast />
+      <PhotoWallModal
+        open={showPhotoWall}
+        onClose={() => setShowPhotoWall(false)}
+        roomId={roomId}
+        token={session.token}
+      />
     </div>
   );
 }

@@ -313,10 +313,8 @@ def register_routes(app: FastAPI) -> None:
             "my_role": actor.role,
             "my_member_id": actor.id,
             "channels": [{"id": c.id, "name": c.name} for c in channels],
-            # Not on room_public() (above) - that's also returned by the
-            # unauthenticated preview-before-joining route, and this is a
-            # secret: anyone who has it can join this room's Jitsi call
-            # with no further auth.
+            # Vestigial (see models.new_video_room_token) - kept in the
+            # response for now since no frontend consumes it either way.
             "video_room_token": room.video_room_token,
         }
 
@@ -403,6 +401,28 @@ def register_routes(app: FastAPI) -> None:
         names = await resolve_member_names(session, {m.member_id for m in rows})
         return {"messages": [message_out(m, names.get(m.member_id)) for m in rows]}
 
+    @app.get("/api/rooms/{room_id}/photos")
+    async def room_photos_route(
+        room_id: str,
+        actor: Member = Depends(require_room_member),
+        session=Depends(get_session),
+    ):
+        rows = await files_mod.list_room_photos(session, room_id)
+        names = await resolve_member_names(session, {msg.member_id for msg, _asset in rows})
+        return {
+            "photos": [
+                {
+                    "file_id": asset.id,
+                    "message_id": msg.id,
+                    "filename": asset.filename,
+                    "member_id": msg.member_id,
+                    "member_name": names.get(msg.member_id),
+                    "created_at": msg.created_at.isoformat(),
+                }
+                for msg, asset in rows
+            ]
+        }
+
     @app.post("/api/rooms/{room_id}/files")
     async def upload_file_route(
         room_id: str,
@@ -436,6 +456,19 @@ def register_routes(app: FastAPI) -> None:
                     session, settings, channel, actor, kind="file", file_id=asset.id
                 )
                 await hub.publish(room_id, realtime.message_event(msg, actor.display_name))
+                if asset.mime.startswith("image/"):
+                    await hub.publish(
+                        room_id,
+                        {
+                            "type": "photo_shared",
+                            "file_id": asset.id,
+                            "message_id": msg.id,
+                            "filename": asset.filename,
+                            "member_id": actor.id,
+                            "member_name": actor.display_name,
+                            "created_at": msg.created_at.isoformat(),
+                        },
+                    )
 
         return {"file_id": asset.id, "filename": asset.filename, "size": asset.size}
 
@@ -573,12 +606,8 @@ def register_routes(app: FastAPI) -> None:
                 if music_state is not None:
                     await websocket.send_json({"type": "music_started", **music_state})
 
-                for mode in realtime.CALL_MODES:
-                    member_ids = await realtime.call_presence_snapshot(redis_client, room_id, mode)
-                    if member_ids:
-                        await websocket.send_json(
-                            {"type": "call_presence", "mode": mode, "member_ids": member_ids}
-                        )
+                for call in await realtime.active_calls_for_member(redis_client, member_id):
+                    await websocket.send_json({"type": "call_presence", **call})
 
                 while True:
                     raw = await _receive_json(websocket)

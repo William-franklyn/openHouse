@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { CallMode, CallSignalEvent, ChannelOut, MemberRole, MessageOut, PresenceMember } from "./types";
+import { CallSignalEvent, ChannelOut, MemberRole, MessageOut, PresenceMember, RoomPhoto } from "./types";
+
+export interface IncomingCallInvite {
+  callId: string;
+  hostMemberId: string;
+  hostName: string;
+}
 
 export type ConnectionStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
@@ -20,7 +26,6 @@ interface RoomStoreState {
   myMemberId: string | null;
   myRole: MemberRole | null;
   myName: string | null;
-  videoRoomToken: string | null;
   channels: ChannelOut[];
   activeChannelId: string | null;
   messagesByChannel: Record<string, MessageOut[]>;
@@ -33,12 +38,21 @@ interface RoomStoreState {
   roomEnded: boolean;
   lastError: { code: string; message: string } | null;
   music: RoomMusicState | null;
-  callPresence: Record<CallMode, string[]>;
+  // Every call_id this client currently knows about, keyed by call_id -
+  // not a fixed "the call" slot, since multiple invite-based meetings can
+  // be live in the same room at once.
+  callPresenceByCallId: Record<string, string[]>;
+  // The call_id I'm the host of or have accepted - null means no call
+  // modal should be showing. Closing the modal clears this (and leaves).
+  myCallId: string | null;
+  // An unanswered invite to show as a popup - null once accepted/dismissed.
+  incomingCallInvite: IncomingCallInvite | null;
   // Raw WebRTC signaling (offer/answer/ICE) - a queue, not an ephemeral
   // "last value" slot like everything else above: ICE candidates can
   // arrive in a rapid burst, and overwriting one with the next would
   // silently drop it instead of just showing a stale value.
   callSignalQueue: CallSignalEvent[];
+  photos: RoomPhoto[];
 
   initRoom: (params: {
     roomId: string;
@@ -46,7 +60,6 @@ interface RoomStoreState {
     role: MemberRole;
     name: string;
     channels: ChannelOut[];
-    videoRoomToken: string;
   }) => void;
   setStatus: (status: ConnectionStatus) => void;
   setActiveChannel: (channelId: string) => void;
@@ -65,9 +78,14 @@ interface RoomStoreState {
   setError: (code: string, message: string) => void;
   clearError: () => void;
   setMusic: (music: RoomMusicState | null) => void;
-  setCallPresence: (mode: CallMode, memberIds: string[]) => void;
+  setCallPresence: (callId: string, memberIds: string[]) => void;
+  setMyCallId: (callId: string | null) => void;
+  setIncomingCallInvite: (invite: IncomingCallInvite | null) => void;
   pushCallSignal: (event: CallSignalEvent) => void;
   clearCallSignals: () => void;
+  addPhoto: (photo: RoomPhoto) => void;
+  mergePhotos: (photos: RoomPhoto[]) => void;
+  removePhotoByMessageId: (messageId: string) => void;
   reset: () => void;
 }
 
@@ -89,9 +107,11 @@ const initialState = {
   roomEnded: false,
   lastError: null,
   music: null,
-  videoRoomToken: null,
-  callPresence: { webrtc: [], jitsi: [] } as Record<CallMode, string[]>,
+  callPresenceByCallId: {} as Record<string, string[]>,
+  myCallId: null,
+  incomingCallInvite: null,
   callSignalQueue: [],
+  photos: [] as RoomPhoto[],
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
@@ -105,7 +125,7 @@ function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
 export const useRoomStore = create<RoomStoreState>((set, get) => ({
   ...initialState,
 
-  initRoom: ({ roomId, memberId, role, name, channels, videoRoomToken }) =>
+  initRoom: ({ roomId, memberId, role, name, channels }) =>
     set({
       roomId,
       myMemberId: memberId,
@@ -113,7 +133,6 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
       myName: name,
       channels,
       activeChannelId: channels[0]?.id ?? null,
-      videoRoomToken,
     }),
 
   setStatus: (status) => set({ status }),
@@ -189,13 +208,36 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
 
   setMusic: (music) => set({ music }),
 
-  setCallPresence: (mode, memberIds) =>
-    set((state) => ({ callPresence: { ...state.callPresence, [mode]: memberIds } })),
+  setCallPresence: (callId, memberIds) =>
+    set((state) => ({ callPresenceByCallId: { ...state.callPresenceByCallId, [callId]: memberIds } })),
+
+  setMyCallId: (callId) => set({ myCallId: callId }),
+
+  setIncomingCallInvite: (invite) => set({ incomingCallInvite: invite }),
 
   pushCallSignal: (event) =>
     set((state) => ({ callSignalQueue: [...state.callSignalQueue, event] })),
 
   clearCallSignals: () => set({ callSignalQueue: [] }),
+
+  addPhoto: (photo) =>
+    set((state) =>
+      state.photos.some((p) => p.file_id === photo.file_id)
+        ? {}
+        : { photos: [...state.photos, photo] }
+    ),
+
+  mergePhotos: (photos) =>
+    set((state) => {
+      const existingIds = new Set(state.photos.map((p) => p.file_id));
+      const fresh = photos.filter((p) => !existingIds.has(p.file_id));
+      return {
+        photos: [...state.photos, ...fresh].sort((a, b) => a.created_at.localeCompare(b.created_at)),
+      };
+    }),
+
+  removePhotoByMessageId: (messageId) =>
+    set((state) => ({ photos: state.photos.filter((p) => p.message_id !== messageId) })),
 
   reset: () => set(initialState),
 }));

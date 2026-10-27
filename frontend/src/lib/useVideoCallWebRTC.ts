@@ -5,6 +5,7 @@ import { useRoomStore } from "./store";
 import { CallSignalEvent } from "./types";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+const EMPTY_PRESENCE: string[] = [];
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
 
@@ -18,7 +19,7 @@ interface Peer {
  * lexicographically smaller member_id is the one who creates the offer -
  * a simple, race-free rule so both sides can independently agree on who
  * initiates without any central coordinator or "who joined first" state. */
-export function useVideoCallWebRTC(roomId: string, myMemberId: string, send: SendFn) {
+export function useVideoCallWebRTC(callId: string, myMemberId: string, send: SendFn) {
   const [joined, setJoined] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
@@ -30,7 +31,7 @@ export function useVideoCallWebRTC(roomId: string, myMemberId: string, send: Sen
   const localStreamRef = useRef<MediaStream | null>(null);
   const joinedRef = useRef(false);
 
-  const callPresence = useRoomStore((s) => s.callPresence.webrtc);
+  const callPresence = useRoomStore((s) => s.callPresenceByCallId[callId] ?? EMPTY_PRESENCE);
   const callSignalQueue = useRoomStore((s) => s.callSignalQueue);
 
   const closePeer = useCallback((peerId: string) => {
@@ -170,23 +171,23 @@ export function useVideoCallWebRTC(roomId: string, myMemberId: string, send: Sen
       setLocalStream(stream);
       joinedRef.current = true;
       setJoined(true);
-      send("join_call", { mode: "webrtc" });
+      send("join_call", { call_id: callId });
     } catch {
       setError("Couldn't access your camera/microphone. Check your browser permissions.");
     }
-  }, [send]);
+  }, [send, callId]);
 
   const leave = useCallback(() => {
     if (!joinedRef.current) return;
     joinedRef.current = false;
     setJoined(false);
-    send("leave_call", { mode: "webrtc" });
+    send("leave_call", { call_id: callId });
     for (const peerId of Array.from(peersRef.current.keys())) closePeer(peerId);
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     setLocalStream(null);
     setRemoteStreams({});
-  }, [send, closePeer]);
+  }, [send, closePeer, callId]);
 
   const toggleMute = useCallback(() => {
     const stream = localStreamRef.current;
@@ -204,13 +205,13 @@ export function useVideoCallWebRTC(roomId: string, myMemberId: string, send: Sen
     setCameraOff(next);
   }, [cameraOff]);
 
-  // Leaving the room/closing the tab should hang up, same reasoning as
-  // MusicPlayer's pause-on-unmount - a dangling open call is worse than a
-  // silently missed leave_call broadcast.
+  // Closing the modal/tab should hang up, same reasoning as MusicPlayer's
+  // pause-on-unmount - a dangling open call is worse than a silently
+  // missed leave_call broadcast.
   useEffect(() => {
     return () => leave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+  }, [callId]);
 
   return { joined, localStream, remoteStreams, muted, cameraOff, error, join, leave, toggleMute, toggleCamera };
 }

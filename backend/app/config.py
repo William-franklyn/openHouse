@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # expires on its own rather than leaving "now playing" stuck forever.
     ROOM_MUSIC_TTL_SECONDS: int = 600
 
+    # ---- Video calls ----
+    # Safety net matching ROOM_MUSIC_TTL_SECONDS above - disconnect cleanup
+    # handles the normal case, this just bounds how long a call's presence
+    # keys can possibly survive a crash/bug in that cleanup path.
+    CALL_TTL_SECONDS: int = 600
+
     # ---- Rate limits ----
     MESSAGE_RATE_LIMIT: int = 10
     MESSAGE_RATE_WINDOW_SECONDS: int = 10

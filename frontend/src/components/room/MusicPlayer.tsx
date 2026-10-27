@@ -1,9 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Music, X } from "lucide-react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { Music, Volume1, Volume2, VolumeX, X } from "lucide-react";
 import { useRoomStore } from "@/lib/store";
 import { api } from "@/lib/api";
+
+const VOLUME_STORAGE_KEY = "openhouse-music-volume";
+
+function loadSavedVolume(): number {
+  if (typeof window === "undefined") return 1;
+  const saved = window.localStorage.getItem(VOLUME_STORAGE_KEY);
+  const parsed = saved !== null ? Number(saved) : NaN;
+  return Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 1;
+}
 
 export function MusicPlayer({
   token,
@@ -18,6 +27,15 @@ export function MusicPlayer({
   const audioRef = useRef<HTMLAudioElement>(null);
   const loadedKeyRef = useRef<string | null>(null);
   const [needsTap, setNeedsTap] = useState(false);
+  const [volume, setVolume] = useState(loadSavedVolume);
+  const [muted, setMuted] = useState(false);
+
+  // Applies on every volume/mute change, and also lands on mount before
+  // the track-loading effect below ever calls .play() - setting it here
+  // rather than once is what makes the slider actually take effect.
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = muted ? 0 : volume;
+  }, [volume, muted]);
 
   // Keyed on source+fileId/url+startedAtMs, not just fileId - a reconnect
   // resends the identical snapshot, which must NOT reload/restart playback
@@ -99,6 +117,16 @@ export function MusicPlayer({
       .catch(() => {});
   }
 
+  function handleVolumeChange(e: ChangeEvent<HTMLInputElement>) {
+    const next = Number(e.target.value);
+    setVolume(next);
+    setMuted(false);
+    window.localStorage.setItem(VOLUME_STORAGE_KEY, String(next));
+  }
+
+  const effectiveVolume = muted ? 0 : volume;
+  const VolumeIcon = effectiveVolume === 0 ? VolumeX : effectiveVolume < 0.5 ? Volume1 : Volume2;
+
   return (
     <>
       <audio ref={audioRef} onEnded={handleEnded} />
@@ -121,6 +149,26 @@ export function MusicPlayer({
               Tap to join the music
             </button>
           )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setMuted((v) => !v)}
+              aria-label={muted ? "Unmute" : "Mute"}
+              className="flex h-6 w-6 items-center justify-center text-muted hover:text-foreground"
+            >
+              <VolumeIcon size={15} />
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={effectiveVolume}
+              onChange={handleVolumeChange}
+              aria-label="Music volume"
+              className="h-1 w-16 accent-accent sm:w-20"
+            />
+          </div>
           {canManage && (
             <button
               type="button"

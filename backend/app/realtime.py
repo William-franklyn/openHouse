@@ -22,7 +22,7 @@ from app import messages as messages_mod
 from app import music_library
 from app import rooms as rooms_mod
 from app.errors import DomainError
-from app.models import Channel, Member, Message
+from app.models import Channel, Member, Message, new_id
 
 
 async def _close_quietly(ws):
@@ -153,36 +153,72 @@ async def music_snapshot(redis, room_id: str) -> dict | None:
 
 
 # ---- Video call presence ----
-# Two independent video-calling implementations (self-hosted WebRTC mesh
-# and an embedded Jitsi Meet call) are both live so they can be A/B tested
-# side by side - presence is tracked per `mode` so "who's in the WebRTC
-# call" and "who's in the Jitsi call" never get conflated into one count,
-# since someone on one can't actually see/hear someone on the other.
-CALL_MODES = ("webrtc", "jitsi")
+# A "call" is an ephemeral, invite-based meeting identified by a random
+# call_id - never just "the room's call". Without a distinct identity per
+# meeting, two people who each clicked a generic "join call" button had no
+# way to confirm they'd land in the same session (and sometimes didn't).
+# call_id, handed out by handle_start_call and carried in every invite, is
+# what two clients agree on to know they're joining each other specifically.
 
 
-def _call_key(room_id: str, mode: str) -> str:
-    return f"call_presence:{mode}:{room_id}"
+def _call_key(call_id: str) -> str:
+    return f"call_presence:{call_id}"
 
 
-async def call_presence_snapshot(redis, room_id: str, mode: str) -> list[str]:
-    raw_ids = await redis.smembers(_call_key(room_id, mode))
+def _member_calls_key(member_id: str) -> str:
+    return f"member_active_calls:{member_id}"
+
+
+async def call_presence_snapshot(redis, call_id: str) -> list[str]:
+    raw_ids = await redis.smembers(_call_key(call_id))
     return [_decode(v) for v in raw_ids]
 
 
-async def _publish_call_presence(redis, hub, room_id: str, mode: str) -> None:
-    member_ids = await call_presence_snapshot(redis, room_id, mode)
-    await hub.publish(room_id, {"type": "call_presence", "mode": mode, "member_ids": member_ids})
+async def active_calls_for_member(redis, member_id: str) -> list[dict]:
+    """Calls this member is currently part of, for the connect-time
+    snapshot - same role as presence_snapshot/music_snapshot: a reconnect
+    shouldn't lose track of a call you were already in."""
+    raw_ids = await redis.smembers(_member_calls_key(member_id))
+    calls = []
+    for raw in raw_ids:
+        call_id = _decode(raw)
+        member_ids = await call_presence_snapshot(redis, call_id)
+        if member_ids:
+            calls.append({"call_id": call_id, "member_ids": member_ids})
+    return calls
+
+
+async def _publish_call_presence(redis, hub, room_id: str, call_id: str) -> None:
+    member_ids = await call_presence_snapshot(redis, call_id)
+    await hub.publish(room_id, {"type": "call_presence", "call_id": call_id, "member_ids": member_ids})
+
+
+async def _join_call(redis, hub, settings, room_id: str, call_id: str, member_id: str) -> None:
+    await redis.sadd(_call_key(call_id), member_id)
+    await redis.expire(_call_key(call_id), settings.CALL_TTL_SECONDS)
+    await redis.sadd(_member_calls_key(member_id), call_id)
+    await redis.expire(_member_calls_key(member_id), settings.CALL_TTL_SECONDS)
+    await _publish_call_presence(redis, hub, room_id, call_id)
+
+
+async def _leave_call(redis, hub, room_id: str, call_id: str, member_id: str) -> None:
+    await redis.srem(_call_key(call_id), member_id)
+    await redis.srem(_member_calls_key(member_id), call_id)
+    await _publish_call_presence(redis, hub, room_id, call_id)
 
 
 async def cleanup_call_presence_on_disconnect(redis, hub, room_id: str, member_id: str) -> None:
     """Mirrors hub.presence_remove on disconnect - a dropped connection
     (tab closed, network loss) never gets a chance to send leave_call, so
-    without this a departed member would linger in the count forever."""
-    for mode in CALL_MODES:
-        removed = await redis.srem(_call_key(room_id, mode), member_id)
+    without this a departed member would linger in every call they were
+    part of forever."""
+    raw_ids = await redis.smembers(_member_calls_key(member_id))
+    for raw in raw_ids:
+        call_id = _decode(raw)
+        removed = await redis.srem(_call_key(call_id), member_id)
         if removed:
-            await _publish_call_presence(redis, hub, room_id, mode)
+            await _publish_call_presence(redis, hub, room_id, call_id)
+    await redis.delete(_member_calls_key(member_id))
 
 
 async def post_system_message(session, settings, hub, room, text: str) -> None:
@@ -418,25 +454,49 @@ async def handle_stop_music(session, settings, redis, hub, room, actor, data):
     await hub.publish(room.id, {"type": "music_stopped"})
 
 
-def _require_call_mode(data: dict) -> str:
-    mode = data.get("mode")
-    if mode not in CALL_MODES:
-        raise DomainError("bad_request", "Unknown call mode.")
-    return mode
+async def handle_start_call(session, settings, redis, hub, room, actor, data):
+    # No role check, same as sending a message - starting a call is a
+    # normal member action, not a mod/owner privilege.
+    invitee_ids = data.get("invitee_ids")
+    if not isinstance(invitee_ids, list) or not invitee_ids:
+        raise DomainError("bad_request", "Pick at least one person to invite.")
+
+    invitees = []
+    for member_id in invitee_ids:
+        target = await session.get(Member, member_id)
+        if target is None or target.room_id != room.id or target.status != "active":
+            raise DomainError("bad_request", "Invalid invitee.")
+        invitees.append(target)
+
+    call_id = new_id()
+    await _join_call(redis, hub, settings, room.id, call_id, actor.id)
+
+    invite = {
+        "type": "call_invite",
+        "call_id": call_id,
+        "host_member_id": actor.id,
+        "host_name": actor.display_name,
+    }
+    # Published once per target rather than broadcast - this is a ring,
+    # not a room-wide announcement, so only invitees (and the host, who
+    # needs the same event to learn their own new call_id) see it.
+    for target in invitees:
+        await hub.publish(room.id, invite, to_member_id=target.id)
+    await hub.publish(room.id, invite, to_member_id=actor.id)
 
 
 async def handle_join_call(session, settings, redis, hub, room, actor, data):
-    # No role check, same as sending a message - joining a call is a
-    # normal member action, not a mod/owner privilege.
-    mode = _require_call_mode(data)
-    await redis.sadd(_call_key(room.id, mode), actor.id)
-    await _publish_call_presence(redis, hub, room.id, mode)
+    call_id = data.get("call_id")
+    if not call_id:
+        raise DomainError("bad_request", "Missing call_id.")
+    await _join_call(redis, hub, settings, room.id, call_id, actor.id)
 
 
 async def handle_leave_call(session, settings, redis, hub, room, actor, data):
-    mode = _require_call_mode(data)
-    await redis.srem(_call_key(room.id, mode), actor.id)
-    await _publish_call_presence(redis, hub, room.id, mode)
+    call_id = data.get("call_id")
+    if not call_id:
+        raise DomainError("bad_request", "Missing call_id.")
+    await _leave_call(redis, hub, room.id, call_id, actor.id)
 
 
 async def _relay_to_peer(hub, room, actor, data, event_type: str, payload_key: str) -> None:
@@ -490,6 +550,7 @@ HANDLERS = {
     "leave": handle_leave,
     "start_music": handle_start_music,
     "stop_music": handle_stop_music,
+    "start_call": handle_start_call,
     "join_call": handle_join_call,
     "leave_call": handle_leave_call,
     "call_offer": handle_call_offer,

@@ -237,15 +237,22 @@ export interface MusicLibraryResponse {
   tracks: MusicLibraryTrack[];
 }
 
-// ---- Video call: presence shared by both implementations, signaling
-// used only by the self-hosted WebRTC one (Jitsi handles its own) ----
-
-export type CallMode = "webrtc" | "jitsi";
+// ---- Video call: self-hosted WebRTC only. A "call" is an invite-based
+// meeting identified by call_id, not an ambient room-wide thing - two
+// members separately clicking a generic "join" button had no guarantee
+// they'd land in the same meeting, which is exactly what call_id fixes. ----
 
 export interface WSCallPresence {
   type: "call_presence";
-  mode: CallMode;
+  call_id: string;
   member_ids: string[];
+}
+
+export interface WSCallInvite {
+  type: "call_invite";
+  call_id: string;
+  host_member_id: string;
+  host_name: string;
 }
 
 export interface WSCallOffer {
@@ -268,6 +275,31 @@ export interface WSIceCandidate {
 
 export type CallSignalEvent = WSCallOffer | WSCallAnswer | WSIceCandidate;
 
+// ---- Photo Wall: every image shared as a chat message, room-wide ----
+
+export interface RoomPhoto {
+  file_id: string;
+  message_id: string;
+  filename: string;
+  member_id: string | null;
+  member_name: string | null;
+  created_at: string;
+}
+
+export interface RoomPhotosResponse {
+  photos: RoomPhoto[];
+}
+
+export interface WSPhotoShared {
+  type: "photo_shared";
+  file_id: string;
+  message_id: string;
+  filename: string;
+  member_id: string;
+  member_name: string;
+  created_at: string;
+}
+
 export type WSServerEvent =
   | WSReady
   | WSMessage
@@ -287,9 +319,11 @@ export type WSServerEvent =
   | WSMusicStarted
   | WSMusicStopped
   | WSCallPresence
+  | WSCallInvite
   | WSCallOffer
   | WSCallAnswer
-  | WSIceCandidate;
+  | WSIceCandidate
+  | WSPhotoShared;
 
 export class ApiError extends Error {
   code: string;

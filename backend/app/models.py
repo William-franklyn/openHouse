@@ -26,10 +26,10 @@ def new_id() -> str:
 
 
 def new_video_room_token() -> str:
-    # Unrelated to the room's own `code` (short, human-typed) - this is
-    # only ever used as a Jitsi room name, so it needs to be unguessable
-    # rather than memorable: anyone who knows it can join that room's
-    # video call on Jitsi's public server with no further auth.
+    # Vestigial: originally a Jitsi Meet room name (now removed in favor
+    # of self-hosted WebRTC calls, which don't need this). Left as-is
+    # rather than migrating it away - it's inert, and dropping a column
+    # isn't worth a production migration for something unused.
     return secrets.token_hex(16)
 
 

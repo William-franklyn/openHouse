@@ -33,20 +33,20 @@ function VideoTile({
 export function WebRTCCallModal({
   open,
   onClose,
-  roomId,
+  callId,
   myMemberId,
   myName,
   send,
 }: {
   open: boolean;
   onClose: () => void;
-  roomId: string;
+  callId: string;
   myMemberId: string;
   myName: string;
   send: (type: string, data?: Record<string, unknown>) => void;
 }) {
   const { joined, localStream, remoteStreams, muted, cameraOff, error, join, leave, toggleMute, toggleCamera } =
-    useVideoCallWebRTC(roomId, myMemberId, send);
+    useVideoCallWebRTC(callId, myMemberId, send);
 
   if (!open) return null;
 
@@ -57,8 +57,8 @@ export function WebRTCCallModal({
       <div className="flex h-[min(85vh,700px)] w-full max-w-4xl flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-surface shadow-[var(--shadow-lg)]">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
           <div>
-            <h2 className="text-[15px] font-semibold text-foreground">Video call (WebRTC)</h2>
-            <p className="text-[11px] text-muted">Self-hosted peer-to-peer - best for small groups</p>
+            <h2 className="text-[15px] font-semibold text-foreground">Video call</h2>
+            <p className="text-[11px] text-muted">Self-hosted peer-to-peer</p>
           </div>
           <button
             type="button"
@@ -80,8 +80,8 @@ export function WebRTCCallModal({
             <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
               <p className="text-sm text-muted">
                 {remoteEntries.length > 0
-                  ? "There's already a call in progress."
-                  : "Nobody's in this call yet."}
+                  ? `${remoteEntries.length} other ${remoteEntries.length === 1 ? "person is" : "people are"} already here.`
+                  : "Waiting for others to join."}
               </p>
               <Button onClick={join}>Join call</Button>
             </div>

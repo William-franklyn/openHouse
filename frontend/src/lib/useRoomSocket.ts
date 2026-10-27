@@ -43,6 +43,7 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
         break;
       case "message_deleted":
         store.removeMessage(event.channel_id, event.message_id);
+        store.removePhotoByMessageId(event.message_id);
         break;
       case "pins":
         store.setPins(event.message_ids);
@@ -97,12 +98,41 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
         store.setMusic(null);
         break;
       case "call_presence":
-        store.setCallPresence(event.mode, event.member_ids);
+        store.setCallPresence(event.call_id, event.member_ids);
+        // Defensive: if presence for my own active call stops including
+        // me (stale TTL, server-side cleanup I didn't initiate), don't
+        // leave the modal showing a call I'm not actually part of.
+        if (event.call_id === store.myCallId && !event.member_ids.includes(store.myMemberId ?? "")) {
+          store.setMyCallId(null);
+        }
+        break;
+      case "call_invite":
+        if (event.host_member_id === store.myMemberId) {
+          // This is the server echoing back the call_id of the meeting I
+          // just started - open my own call modal, no popup needed.
+          store.setMyCallId(event.call_id);
+        } else {
+          store.setIncomingCallInvite({
+            callId: event.call_id,
+            hostMemberId: event.host_member_id,
+            hostName: event.host_name,
+          });
+        }
         break;
       case "call_offer":
       case "call_answer":
       case "ice_candidate":
         store.pushCallSignal(event);
+        break;
+      case "photo_shared":
+        store.addPhoto({
+          file_id: event.file_id,
+          message_id: event.message_id,
+          filename: event.filename,
+          member_id: event.member_id,
+          member_name: event.member_name,
+          created_at: event.created_at,
+        });
         break;
     }
   }, []);
