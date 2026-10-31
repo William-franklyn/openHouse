@@ -189,6 +189,26 @@ class Report(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 
 
+class Game(Base):
+    __tablename__ = "games"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="chess")
+    white_member_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    black_member_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    # Append-only log of UCI moves ("e2e4", "e7e5", ...), same spirit as
+    # the messages table's seq'd log - the board is always a replay of
+    # this list from the standard starting position, never a separately
+    # stored snapshot that could drift from it.
+    moves_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    result: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    termination: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
 class MetricDaily(Base):
     __tablename__ = "metrics_daily"
 

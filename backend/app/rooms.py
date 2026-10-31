@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app import metrics, security
 from app.errors import DomainError
-from app.models import Channel, FileAsset, Invite, Member, Message, Room, new_id, to_naive_utc, utcnow
+from app.models import Channel, FileAsset, Game, Invite, Member, Message, Room, new_id, to_naive_utc, utcnow
 
 
 async def _unique_code(session, settings) -> str:
@@ -188,6 +188,7 @@ async def delete_room(session, storage, room: Room) -> None:
         await session.delete(f)
 
     await session.execute(Invite.__table__.delete().where(Invite.room_id == room.id))
+    await session.execute(Game.__table__.delete().where(Game.room_id == room.id))
 
     await session.commit()
 

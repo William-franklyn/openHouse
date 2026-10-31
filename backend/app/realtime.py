@@ -17,6 +17,7 @@ import time
 from sqlalchemy import select
 
 from app import files as files_mod
+from app import games as games_mod
 from app import members as members_mod
 from app import messages as messages_mod
 from app import music_library
@@ -523,6 +524,83 @@ async def handle_call_ice_candidate(session, settings, redis, hub, room, actor, 
     await _relay_to_peer(hub, room, actor, data, "ice_candidate", "candidate")
 
 
+# ---- Games (chess, the first) ----
+# One pending-or-active game per member per room at a time (see
+# games.get_live_game_for_member) - keeps the frontend's state to a single
+# myGameId slot, same shape as myCallId, instead of a list.
+
+async def handle_challenge_to_chess(session, settings, redis, hub, room, actor, data):
+    opponent = await _get_target_member(session, room.id, data.get("opponent_id"))
+    game = await games_mod.create_challenge(session, room, actor, opponent)
+    invite = games_mod.invite_event(game, actor, opponent)
+    # Sent to both - the challenger needs the same event to learn the new
+    # game_id and show a "waiting for a reply" state, same pattern as
+    # handle_start_call echoing call_invite back to its own host.
+    await hub.publish(room.id, invite, to_member_id=opponent.id)
+    await hub.publish(room.id, invite, to_member_id=actor.id)
+
+
+async def handle_accept_game(session, settings, redis, hub, room, actor, data):
+    game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
+    game = await games_mod.accept_challenge(session, game, actor)
+    state = await games_mod.build_state_event(session, game)
+    await hub.publish(room.id, state, to_member_id=game.white_member_id)
+    await hub.publish(room.id, state, to_member_id=game.black_member_id)
+    await post_system_message(
+        session, settings, hub, room, f"♟️ {state['white_name']} and {state['black_name']} started a game of chess!"
+    )
+
+
+async def handle_decline_game(session, settings, redis, hub, room, actor, data):
+    game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
+    white_id = game.white_member_id
+    game = await games_mod.decline_challenge(session, game, actor)
+    await hub.publish(room.id, {"type": "game_declined", "game_id": game.id}, to_member_id=white_id)
+
+
+async def handle_cancel_game(session, settings, redis, hub, room, actor, data):
+    game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
+    black_id = game.black_member_id
+    game = await games_mod.cancel_challenge(session, game, actor)
+    await hub.publish(room.id, {"type": "game_cancelled", "game_id": game.id}, to_member_id=black_id)
+
+
+async def handle_game_move(session, settings, redis, hub, room, actor, data):
+    game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
+    from_sq, to_sq, promotion = data.get("from"), data.get("to"), data.get("promotion")
+    if not from_sq or not to_sq:
+        raise DomainError("bad_request", "Missing from/to.")
+    uci = f"{from_sq}{to_sq}{promotion or ''}"
+    game = await games_mod.apply_move(session, game, actor, uci)
+    state = await games_mod.build_state_event(session, game)
+    await hub.publish(room.id, state, to_member_id=game.white_member_id)
+    await hub.publish(room.id, state, to_member_id=game.black_member_id)
+    if state["game_over"]:
+        await post_system_message(session, settings, hub, room, _result_message(state))
+
+
+async def handle_resign_game(session, settings, redis, hub, room, actor, data):
+    game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
+    game = await games_mod.resign(session, game, actor)
+    state = await games_mod.build_state_event(session, game)
+    await hub.publish(room.id, state, to_member_id=game.white_member_id)
+    await hub.publish(room.id, state, to_member_id=game.black_member_id)
+    await post_system_message(session, settings, hub, room, _result_message(state))
+
+
+def _result_message(state: dict) -> str:
+    white, black = state["white_name"], state["black_name"]
+    if state["result"] == "draw":
+        return f"♟️ {white} and {black}'s chess game ended in a draw ({state['termination'].replace('_', ' ')})."
+    winner = white if state["result"] == "white" else black
+    loser = black if state["result"] == "white" else white
+    if state["termination"] == "resignation":
+        return f"♟️ {winner} wins! {loser} resigned."
+    if state["termination"] == "checkmate":
+        return f"♟️ Checkmate! {winner} wins the chess game."
+    return f"♟️ {winner} wins the chess game ({state['termination'].replace('_', ' ')})."
+
+
 async def handle_leave(session, settings, redis, hub, room, actor, data):
     display_name = actor.display_name
     await members_mod.leave_room(session, actor)
@@ -556,6 +634,12 @@ HANDLERS = {
     "call_offer": handle_call_offer,
     "call_answer": handle_call_answer,
     "call_ice_candidate": handle_call_ice_candidate,
+    "challenge_to_chess": handle_challenge_to_chess,
+    "accept_game": handle_accept_game,
+    "decline_game": handle_decline_game,
+    "cancel_game": handle_cancel_game,
+    "game_move": handle_game_move,
+    "resign_game": handle_resign_game,
 }
 
 

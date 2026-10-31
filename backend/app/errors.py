@@ -20,6 +20,9 @@ HTTP_STATUS_BY_CODE = {
     "bad_request": 400,
     "bad_token": 401,
     "wrong_network": 403,
+    "game_in_progress": 409,
+    "not_your_turn": 403,
+    "illegal_move": 400,
 }
 
 

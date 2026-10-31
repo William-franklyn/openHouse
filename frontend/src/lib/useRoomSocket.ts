@@ -124,6 +124,55 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
       case "ice_candidate":
         store.pushCallSignal(event);
         break;
+      case "game_invite":
+        if (event.challenger_member_id === store.myMemberId) {
+          // The server echoing back my own challenge - show a "waiting
+          // for a reply" state, not a toast asking me to accept my own
+          // invite. Same self-echo pattern as call_invite.
+          store.setPendingChallenge({ gameId: event.game_id, opponentName: event.opponent_name });
+        } else {
+          store.setIncomingGameInvite({
+            gameId: event.game_id,
+            challengerMemberId: event.challenger_member_id,
+            challengerName: event.challenger_name,
+          });
+        }
+        break;
+      case "game_declined":
+        if (store.pendingChallenge?.gameId === event.game_id) {
+          store.setPendingChallenge(null);
+          store.setError("game_declined", "They declined your chess challenge.");
+        }
+        break;
+      case "game_cancelled":
+        if (store.incomingGameInvite?.gameId === event.game_id) {
+          store.setIncomingGameInvite(null);
+        }
+        break;
+      case "game_state":
+        // Accepting (or any later move) resolves whichever side of the
+        // invite flow I was on - both clear safely even if only one was set.
+        if (store.pendingChallenge?.gameId === event.game_id) store.setPendingChallenge(null);
+        if (store.incomingGameInvite?.gameId === event.game_id) store.setIncomingGameInvite(null);
+        store.setMyGameId(event.game_id);
+        store.setGame({
+          gameId: event.game_id,
+          status: event.status,
+          whiteMemberId: event.white_member_id,
+          whiteName: event.white_name,
+          blackMemberId: event.black_member_id,
+          blackName: event.black_name,
+          moves: event.moves,
+          boardFen: event.board_fen,
+          turn: event.turn,
+          legalMoves: event.legal_moves,
+          inCheck: event.in_check,
+          gameOver: event.game_over,
+          result: event.result,
+          termination: event.termination,
+          lastMove: event.last_move,
+        });
+        break;
       case "photo_shared":
         store.addPhoto({
           file_id: event.file_id,

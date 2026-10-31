@@ -27,6 +27,10 @@ import { WebRTCCallModal } from "./WebRTCCallModal";
 import { StartCallModal } from "./StartCallModal";
 import { IncomingCallToast } from "./IncomingCallToast";
 import { PhotoWallModal } from "./PhotoWallModal";
+import { StartGameModal } from "./StartGameModal";
+import { GameBoardModal } from "./GameBoardModal";
+import { IncomingGameToast } from "./IncomingGameToast";
+import { OutgoingChallengeToast } from "./OutgoingChallengeToast";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
@@ -41,6 +45,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [showMusicPicker, setShowMusicPicker] = useState(false);
   const [showStartCall, setShowStartCall] = useState(false);
   const [showPhotoWall, setShowPhotoWall] = useState(false);
+  const [showStartGame, setShowStartGame] = useState(false);
+  const [showGameBoard, setShowGameBoard] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ memberId?: string; messageId?: string } | null>(null);
 
   const { send } = useRoomSocket(session?.token ?? null);
@@ -50,6 +56,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const myRole = useRoomStore((s) => s.myRole);
   const myMemberId = useRoomStore((s) => s.myMemberId);
   const myCallId = useRoomStore((s) => s.myCallId);
+  const myGameId = useRoomStore((s) => s.myGameId);
   const ownershipOfferFrom = useRoomStore((s) => s.ownershipOfferFrom);
   const removedReason = useRoomStore((s) => s.removedReason);
   const roomDeletedMessage = useRoomStore((s) => s.roomDeletedMessage);
@@ -95,6 +102,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
     if (typeof window === "undefined") return;
     setShowMembers(window.matchMedia("(min-width: 1280px)").matches);
   }, []);
+
+  // A new game_id (challenge just accepted, or a reconnect snapshot found
+  // one already active) pops the board open for both players - closing it
+  // afterward only hides it (myGameId itself isn't cleared), so it doesn't
+  // reopen on its own again until the next genuinely new game.
+  useEffect(() => {
+    if (myGameId) setShowGameBoard(true);
+  }, [myGameId]);
 
   if (roomDeletedMessage) return <TerminalStateOverlay roomId={roomId} message={roomDeletedMessage} />;
   if (removedReason) return <TerminalStateOverlay roomId={roomId} message={removedReason} />;
@@ -163,6 +178,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           membersOpen={showMembers}
           onOpenStartCall={() => setShowStartCall(true)}
           onOpenPhotoWall={() => setShowPhotoWall(true)}
+          onOpenGames={() => (myGameId ? setShowGameBoard(true) : setShowStartGame(true))}
         />
         <PinnedBanner />
         <MusicPlayer
@@ -280,6 +296,24 @@ export function RoomClient({ roomId }: { roomId: string }) {
         roomId={roomId}
         token={session.token}
       />
+      {myMemberId && (
+        <StartGameModal
+          open={showStartGame}
+          onClose={() => setShowStartGame(false)}
+          myMemberId={myMemberId}
+          onChallenge={(opponentId) => send("challenge_to_chess", { opponent_id: opponentId })}
+        />
+      )}
+      {myMemberId && (
+        <GameBoardModal
+          open={showGameBoard}
+          onClose={() => setShowGameBoard(false)}
+          myMemberId={myMemberId}
+          send={send}
+        />
+      )}
+      <IncomingGameToast send={send} />
+      <OutgoingChallengeToast send={send} />
     </div>
   );
 }

@@ -307,6 +307,54 @@ export interface WSPhotoShared {
   created_at: string;
 }
 
+// ---- Games: chess is the first. One pending-or-active game per member
+// per room at a time (enforced server-side) - the frontend only ever
+// needs a single myGameId slot, same shape as myCallId. ----
+
+export type GameKind = "chess";
+export type GameStatus = "pending" | "active" | "finished";
+export type GameResult = "white" | "black" | "draw";
+
+export interface WSGameInvite {
+  type: "game_invite";
+  game_id: string;
+  kind: GameKind;
+  challenger_member_id: string;
+  challenger_name: string;
+  opponent_member_id: string;
+  opponent_name: string;
+}
+
+export interface WSGameDeclined {
+  type: "game_declined";
+  game_id: string;
+}
+
+export interface WSGameCancelled {
+  type: "game_cancelled";
+  game_id: string;
+}
+
+export interface WSGameState {
+  type: "game_state";
+  game_id: string;
+  kind: GameKind;
+  status: GameStatus;
+  white_member_id: string;
+  white_name: string;
+  black_member_id: string;
+  black_name: string;
+  moves: string[];
+  board_fen: string;
+  turn: "white" | "black";
+  legal_moves: string[];
+  in_check: boolean;
+  game_over: boolean;
+  result: GameResult | null;
+  termination: string | null;
+  last_move: string | null;
+}
+
 export type WSServerEvent =
   | WSReady
   | WSMessage
@@ -330,7 +378,11 @@ export type WSServerEvent =
   | WSCallOffer
   | WSCallAnswer
   | WSIceCandidate
-  | WSPhotoShared;
+  | WSPhotoShared
+  | WSGameInvite
+  | WSGameDeclined
+  | WSGameCancelled
+  | WSGameState;
 
 export class ApiError extends Error {
   code: string;

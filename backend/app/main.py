@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app import files as files_mod
+from app import games as games_mod
 from app import members as members_mod
 from app import messages as messages_mod
 from app import metrics as metrics_mod
@@ -670,6 +671,10 @@ def register_routes(app: FastAPI) -> None:
 
                 for call in await realtime.active_calls_for_member(redis_client, member_id):
                     await websocket.send_json({"type": "call_presence", **call})
+
+                game_event = await games_mod.connect_snapshot_event(session, room_id, member_id)
+                if game_event is not None:
+                    await websocket.send_json(game_event)
 
                 while True:
                     raw = await _receive_json(websocket)

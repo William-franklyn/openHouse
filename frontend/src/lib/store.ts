@@ -1,10 +1,43 @@
 import { create } from "zustand";
-import { CallSignalEvent, ChannelOut, MemberRole, MessageOut, PresenceMember, RoomPhoto } from "./types";
+import {
+  CallSignalEvent,
+  ChannelOut,
+  GameResult,
+  GameStatus,
+  MemberRole,
+  MessageOut,
+  PresenceMember,
+  RoomPhoto,
+} from "./types";
 
 export interface IncomingCallInvite {
   callId: string;
   hostMemberId: string;
   hostName: string;
+}
+
+export interface IncomingGameInvite {
+  gameId: string;
+  challengerMemberId: string;
+  challengerName: string;
+}
+
+export interface GameState {
+  gameId: string;
+  status: GameStatus;
+  whiteMemberId: string;
+  whiteName: string;
+  blackMemberId: string;
+  blackName: string;
+  moves: string[];
+  boardFen: string;
+  turn: "white" | "black";
+  legalMoves: string[];
+  inCheck: boolean;
+  gameOver: boolean;
+  result: GameResult | null;
+  termination: string | null;
+  lastMove: string | null;
 }
 
 export type ConnectionStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
@@ -54,6 +87,19 @@ interface RoomStoreState {
   callSignalQueue: CallSignalEvent[];
   photos: RoomPhoto[];
 
+  // An unanswered challenge TO me - a toast with accept/decline, same role
+  // as incomingCallInvite.
+  incomingGameInvite: IncomingGameInvite | null;
+  // A challenge I sent that's still awaiting a reply - shown as a small
+  // "waiting for X" state instead of a toast, since I'm the one who acted.
+  pendingChallenge: { gameId: string; opponentName: string } | null;
+  // The one active game's board - null means no board modal should show.
+  // Closing the modal just hides it (setMyGameId(null)); the game itself
+  // lives server-side (Postgres), so it's not lost, only reconnect/reopen
+  // needs to resync, same as myCallId does for video calls.
+  myGameId: string | null;
+  game: GameState | null;
+
   initRoom: (params: {
     roomId: string;
     memberId: string;
@@ -86,6 +132,10 @@ interface RoomStoreState {
   addPhoto: (photo: RoomPhoto) => void;
   mergePhotos: (photos: RoomPhoto[]) => void;
   removePhotoByMessageId: (messageId: string) => void;
+  setIncomingGameInvite: (invite: IncomingGameInvite | null) => void;
+  setPendingChallenge: (challenge: { gameId: string; opponentName: string } | null) => void;
+  setMyGameId: (gameId: string | null) => void;
+  setGame: (game: GameState | null) => void;
   reset: () => void;
 }
 
@@ -112,6 +162,10 @@ const initialState = {
   incomingCallInvite: null,
   callSignalQueue: [],
   photos: [] as RoomPhoto[],
+  incomingGameInvite: null as IncomingGameInvite | null,
+  pendingChallenge: null as { gameId: string; opponentName: string } | null,
+  myGameId: null as string | null,
+  game: null as GameState | null,
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
@@ -238,6 +292,14 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
 
   removePhotoByMessageId: (messageId) =>
     set((state) => ({ photos: state.photos.filter((p) => p.message_id !== messageId) })),
+
+  setIncomingGameInvite: (invite) => set({ incomingGameInvite: invite }),
+
+  setPendingChallenge: (challenge) => set({ pendingChallenge: challenge }),
+
+  setMyGameId: (gameId) => set({ myGameId: gameId }),
+
+  setGame: (game) => set({ game }),
 
   reset: () => set(initialState),
 }));
