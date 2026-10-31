@@ -29,7 +29,7 @@ import { IncomingCallToast } from "./IncomingCallToast";
 import { PhotoWallModal } from "./PhotoWallModal";
 import { StartGameModal } from "./StartGameModal";
 import { GamesModal } from "./GamesModal";
-import { GameBoardModal } from "./GameBoardModal";
+import { GameBoardPanel } from "./GameBoardPanel";
 import { IncomingGameToast } from "./IncomingGameToast";
 import { OutgoingChallengeToast } from "./OutgoingChallengeToast";
 import { LiveGamesBanner } from "./LiveGamesBanner";
@@ -62,6 +62,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const myMemberId = useRoomStore((s) => s.myMemberId);
   const myCallId = useRoomStore((s) => s.myCallId);
   const myGameId = useRoomStore((s) => s.myGameId);
+  const game = useRoomStore((s) => s.game);
+  const watchingGameId = useRoomStore((s) => s.watchingGameId);
+  const watchedGame = useRoomStore((s) => s.watchedGame);
   const linkWaitingGame = useRoomStore((s) => s.linkWaitingGame);
   const ownershipOfferFrom = useRoomStore((s) => s.ownershipOfferFrom);
   const removedReason = useRoomStore((s) => s.removedReason);
@@ -167,6 +170,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
     (room.join_policy === "invite_only" && room.invite_by === "members");
   const canManage = myRole === "owner" || myRole === "mod";
 
+  // Mirrors GameBoardPanel's own internal mode priority (watch > awaiting
+  // link > play) - this just decides whether to mount the panel at all,
+  // docked next to chat instead of blocking it like the old full-screen
+  // overlay did.
+  const gameBoardMode: "watch" | "awaiting" | "play" = watchingGameId ? "watch" : linkWaitingGame ? "awaiting" : "play";
+  const gameBoardVisible =
+    gameBoardMode === "watch" ? !!watchedGame : gameBoardMode === "awaiting" ? true : showGameBoard && !!game;
+
   function handleLogout() {
     send("leave");
     clearSession(roomId);
@@ -231,6 +242,34 @@ export function RoomClient({ roomId }: { roomId: string }) {
               onSend={(text) => send("send_message", { channel_id: activeChannelId, text })}
             />
           </div>
+
+          {/* Docked side-by-side on wide screens so chat/music stay usable
+              while a game is up; on narrow screens there isn't room for
+              both, so it takes over as a full-screen overlay instead,
+              same as the old modal did. Always a single mount point -
+              CSS (not duplicated JSX) switches between the two layouts,
+              since this panel has its own sound-effect state that would
+              double-fire if rendered twice at once. */}
+          {gameBoardVisible && myMemberId && (
+            <>
+              <div
+                className="fixed inset-0 z-30 bg-black/60 xl:hidden"
+                onClick={() => setShowGameBoard(false)}
+                aria-hidden
+              />
+              <div className="fixed inset-0 z-40 flex flex-col xl:static xl:inset-auto xl:z-auto xl:w-[400px] xl:shrink-0 xl:border-l xl:border-border">
+                <GameBoardPanel
+                  onClose={() => setShowGameBoard(false)}
+                  myMemberId={myMemberId}
+                  myName={session.name}
+                  roomId={roomId}
+                  roomCode={room.code}
+                  token={session.token}
+                  send={send}
+                />
+              </div>
+            </>
+          )}
 
           <OnlineList
             open={showMembers}
@@ -329,18 +368,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
           myMemberId={myMemberId}
           onChallenge={(opponentId) => send("challenge_to_chess", { opponent_id: opponentId })}
           onInviteLink={() => send("create_game_link")}
-        />
-      )}
-      {myMemberId && (
-        <GameBoardModal
-          open={showGameBoard}
-          onClose={() => setShowGameBoard(false)}
-          myMemberId={myMemberId}
-          myName={session.name}
-          roomId={roomId}
-          roomCode={room.code}
-          token={session.token}
-          send={send}
         />
       )}
       <IncomingGameToast send={send} />
