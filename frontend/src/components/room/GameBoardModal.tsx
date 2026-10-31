@@ -367,8 +367,8 @@ function AwaitingLinkCard({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="flex w-full max-w-sm flex-col overflow-hidden rounded-[var(--radius-lg)] border border-violet-500/20 bg-gradient-to-b from-[#1b1538] to-[#0d0a1c] text-white shadow-[0_0_60px_rgba(124,58,237,0.25)]">
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-white/5 px-4">
+      <div className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden overflow-y-auto rounded-[var(--radius-lg)] border border-violet-500/20 bg-gradient-to-b from-[#1b1538] to-[#0d0a1c] text-white shadow-[0_0_60px_rgba(124,58,237,0.25)]">
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-white/5 px-5">
           <div className="flex items-center gap-2">
             <span className="text-lg">♟️</span>
             <h2 className="text-[13px] font-extrabold tracking-wide text-white">CHESS ARENA</h2>
@@ -383,13 +383,13 @@ function AwaitingLinkCard({
           </button>
         </div>
 
-        <div className="flex flex-col items-center gap-4 p-5 text-center">
+        <div className="flex flex-col items-center gap-5 px-6 py-6 text-center">
           <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-violet-500/15 text-violet-300">
             <Link2 size={20} className="animate-recording-pulse" />
           </span>
           <div>
-            <p className="text-[14px] font-bold text-white">Waiting for someone to join…</p>
-            <p className="mt-1 text-[12px] text-white/50">
+            <p className="text-[15px] font-bold text-white">Waiting for someone to join…</p>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/50">
               Share this link - whoever opens it gets dropped straight into this game with you.
             </p>
           </div>
@@ -403,7 +403,7 @@ function AwaitingLinkCard({
           <button
             type="button"
             onClick={onCancel}
-            className="mt-1 text-[12px] font-medium text-white/40 hover:text-white/70"
+            className="text-[12px] font-medium text-white/40 hover:text-white/70"
           >
             Cancel invite
           </button>

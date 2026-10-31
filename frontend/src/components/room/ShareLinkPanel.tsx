@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Link2, Mail, MessageCircle, Share2 } from "lucide-react";
+import { Check, Copy, Mail, MessageCircle, Share2 } from "lucide-react";
 
 /** A link display + copy button + WhatsApp/email/LinkedIn share-intent
  * buttons - all client-side share URLs, no API calls or auth needed. */
@@ -31,18 +31,22 @@ export function ShareLinkPanel({
     ? "border-white/15 bg-white/5 text-white"
     : "border-border bg-surface-muted text-foreground";
   const mutedClass = dark ? "text-white/50" : "text-muted";
+  const circleClass = dark
+    ? "border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
+    : "border-border bg-surface text-foreground hover:bg-surface-muted";
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className={`flex items-center gap-2 rounded-[var(--radius-md)] border px-3 py-2.5 ${boxClass}`}>
-        <Link2 size={14} className={`shrink-0 ${mutedClass}`} />
-        <span className="min-w-0 flex-1 truncate text-[13px]">{link}</span>
+    <div className="flex w-full flex-col gap-4">
+      {/* Full link, wrapped rather than truncated - nothing hidden. */}
+      <div className={`rounded-[var(--radius-md)] border px-3.5 py-3 ${boxClass}`}>
+        <p className={`mb-1 text-[10px] font-semibold uppercase tracking-wide ${mutedClass}`}>Invite link</p>
+        <p className="break-all text-[12.5px] leading-snug">{link}</p>
       </div>
 
       <button
         type="button"
         onClick={copy}
-        className={`flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border px-3 py-2 text-[13px] font-semibold transition-colors ${
+        className={`flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border px-3 py-2.5 text-[13px] font-semibold transition-colors ${
           dark
             ? "border-violet-400/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25"
             : "border-accent/30 bg-accent-soft text-accent hover:border-accent"
@@ -52,34 +56,34 @@ export function ShareLinkPanel({
         {copied ? "Copied!" : "Copy link"}
       </button>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-start justify-center gap-5">
         <a
           href={waUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border px-2 py-2 text-[12px] font-medium transition-colors ${
-            dark ? "border-white/15 text-white/70 hover:bg-white/10" : "border-border text-muted hover:bg-surface-muted"
-          }`}
+          className="flex flex-col items-center gap-1.5"
         >
-          <MessageCircle size={13} /> WhatsApp
+          <span className={`flex h-11 w-11 items-center justify-center rounded-full border transition-colors ${circleClass}`}>
+            <MessageCircle size={17} />
+          </span>
+          <span className={`text-[11px] font-medium ${mutedClass}`}>WhatsApp</span>
         </a>
-        <a
-          href={mailUrl}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border px-2 py-2 text-[12px] font-medium transition-colors ${
-            dark ? "border-white/15 text-white/70 hover:bg-white/10" : "border-border text-muted hover:bg-surface-muted"
-          }`}
-        >
-          <Mail size={13} /> Email
+        <a href={mailUrl} className="flex flex-col items-center gap-1.5">
+          <span className={`flex h-11 w-11 items-center justify-center rounded-full border transition-colors ${circleClass}`}>
+            <Mail size={17} />
+          </span>
+          <span className={`text-[11px] font-medium ${mutedClass}`}>Email</span>
         </a>
         <a
           href={linkedinUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border px-2 py-2 text-[12px] font-medium transition-colors ${
-            dark ? "border-white/15 text-white/70 hover:bg-white/10" : "border-border text-muted hover:bg-surface-muted"
-          }`}
+          className="flex flex-col items-center gap-1.5"
         >
-          <Share2 size={13} /> LinkedIn
+          <span className={`flex h-11 w-11 items-center justify-center rounded-full border transition-colors ${circleClass}`}>
+            <Share2 size={17} />
+          </span>
+          <span className={`text-[11px] font-medium ${mutedClass}`}>LinkedIn</span>
         </a>
       </div>
     </div>
