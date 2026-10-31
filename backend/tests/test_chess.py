@@ -508,6 +508,33 @@ async def test_unwatch_stops_future_state_updates(client, app):
     assert after == before
 
 
+async def test_watching_ttl_refreshes_on_every_delivered_move(client, app):
+    """Regression test: a real chess game can easily run longer than
+    GAME_WATCH_TTL_SECONDS. Without a refresh on delivery, a spectator's
+    Redis presence would silently expire mid-game, and they'd stop
+    getting moves with no error - looking exactly like "not real-time,
+    have to refresh"."""
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    opp = await join(client, data["room"]["code"], "Opponent")
+    bystander = await join(client, data["room"]["code"], "Bystander")
+    await register_socket(app, room_id, bystander["member_id"])
+
+    game_id, owner_ws, _ = await _start_game(app, room_id, owner_id, opp["member_id"])
+    await ws_dispatch(app, room_id, bystander["member_id"], "watch_game", {"game_id": game_id})
+
+    # Simulate time passing close to expiry.
+    await app.state.redis.expire(f"game_watchers:{game_id}", 5)
+    await app.state.redis.expire(f"member_watching_games:{bystander['member_id']}", 5)
+
+    await ws_dispatch(app, room_id, owner_id, "game_move", {"game_id": game_id, "from": "e2", "to": "e4"})
+
+    watchers_ttl = await app.state.redis.ttl(f"game_watchers:{game_id}")
+    member_ttl = await app.state.redis.ttl(f"member_watching_games:{bystander['member_id']}")
+    assert watchers_ttl > 5
+    assert member_ttl > 5
+
+
 async def test_watcher_count_broadcasts_on_watch_and_unwatch(client, app):
     data = await create_room(client)
     room_id, owner_id = data["room"]["id"], data["member"]["member_id"]

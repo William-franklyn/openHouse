@@ -274,16 +274,25 @@ async def cleanup_watchers_on_disconnect(redis, hub, room_id: str, member_id: st
     await redis.delete(_member_watching_key(member_id))
 
 
-async def _broadcast_game_state(redis, hub, room, game, state: dict) -> None:
+async def _broadcast_game_state(redis, hub, settings, room, game, state: dict) -> None:
     """Players always get it directly; watchers get it too, looked up
     fresh each time rather than kept in the event - a watcher list can
-    change between moves."""
+    change between moves.
+
+    Every delivery also refreshes that watcher's TTL. The TTL exists only
+    as a safety net for a tab that vanished without sending unwatch_game
+    (cleanup_watchers_on_disconnect handles the normal case) - without
+    this refresh, a real game that runs longer than GAME_WATCH_TTL_SECONDS
+    would silently drop every spectator mid-game: they'd stop receiving
+    moves with no error, looking "stuck" until they re-watch by hand."""
     await hub.publish(room.id, state, to_member_id=game.white_member_id)
     await hub.publish(room.id, state, to_member_id=game.black_member_id)
     for watcher_id in await watchers_snapshot(redis, game.id):
         if watcher_id in (game.white_member_id, game.black_member_id):
             continue
         await hub.publish(room.id, state, to_member_id=watcher_id)
+        await redis.expire(_watchers_key(game.id), settings.GAME_WATCH_TTL_SECONDS)
+        await redis.expire(_member_watching_key(watcher_id), settings.GAME_WATCH_TTL_SECONDS)
 
 
 async def post_system_message(session, settings, hub, room, text: str) -> None:
@@ -608,7 +617,7 @@ async def handle_accept_game(session, settings, redis, hub, room, actor, data):
     game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
     game = await games_mod.accept_challenge(session, game, actor)
     state = await games_mod.build_state_event(session, game)
-    await _broadcast_game_state(redis, hub, room, game, state)
+    await _broadcast_game_state(redis, hub, settings, room, game, state)
     # Room-wide (no to_member_id) - everyone else gets a lightweight
     # "live now" banner they can tap to spectate, without being dropped
     # into the board themselves.
@@ -657,7 +666,7 @@ async def handle_claim_game_link(session, settings, redis, hub, room, actor, dat
         # into the game, no second "started a game" announcement/broadcast.
         await hub.publish(room.id, state, to_member_id=actor.id)
         return
-    await _broadcast_game_state(redis, hub, room, game, state)
+    await _broadcast_game_state(redis, hub, settings, room, game, state)
     white = await session.get(Member, game.white_member_id)
     await hub.publish(room.id, games_mod.live_event(game, white, actor))
     await post_system_message(
@@ -673,7 +682,7 @@ async def handle_game_move(session, settings, redis, hub, room, actor, data):
     uci = f"{from_sq}{to_sq}{promotion or ''}"
     game = await games_mod.apply_move(session, game, actor, uci)
     state = await games_mod.build_state_event(session, game)
-    await _broadcast_game_state(redis, hub, room, game, state)
+    await _broadcast_game_state(redis, hub, settings, room, game, state)
     if state["game_over"]:
         await hub.publish(room.id, {"type": "game_live_ended", "game_id": game.id})
         await post_system_message(session, settings, hub, room, _result_message(state))
@@ -683,7 +692,7 @@ async def handle_resign_game(session, settings, redis, hub, room, actor, data):
     game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
     game = await games_mod.resign(session, game, actor)
     state = await games_mod.build_state_event(session, game)
-    await _broadcast_game_state(redis, hub, room, game, state)
+    await _broadcast_game_state(redis, hub, settings, room, game, state)
     await hub.publish(room.id, {"type": "game_live_ended", "game_id": game.id})
     await post_system_message(session, settings, hub, room, _result_message(state))
 
