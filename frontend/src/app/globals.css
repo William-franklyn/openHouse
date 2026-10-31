@@ -232,7 +232,7 @@ button {
   animation: slide-in-right 0.2s ease-out;
 }
 
-/* Game-over celebration (GameBoardPanel) - a burst of falling confetti
+/* Game-over celebration (GameBoardModal) - a burst of falling confetti
    pieces plus the big result text popping in. Confetti pieces set their
    own --x/--rotate/--delay/--duration custom properties inline per piece
    (randomized in JS), this just defines the shared fall path. */
