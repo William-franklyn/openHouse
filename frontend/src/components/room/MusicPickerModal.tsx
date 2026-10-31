@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
-import { Play } from "lucide-react";
+import { Play, Volume2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
@@ -28,6 +28,9 @@ export function MusicPickerModal({
   const [uploading, setUploading] = useState(false);
   const [tracks, setTracks] = useState<MusicLibraryTrack[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const music = useRoomStore((s) => s.music);
+  const myMemberId = useRoomStore((s) => s.myMemberId);
+  const alreadyOwnsFloor = music?.startedByMemberId === myMemberId;
 
   useEffect(() => {
     if (!open) return;
@@ -58,8 +61,11 @@ export function MusicPickerModal({
   return (
     <Modal open={open} onClose={onClose} title="Play music">
       <div className="flex flex-col gap-3">
-        <p className="text-[13px] text-muted">
-          Everyone in the room will hear it together as background while you chat.
+        <p className="flex items-start gap-2 rounded-[var(--radius-md)] bg-accent-soft px-3 py-2.5 text-[13px] font-medium text-accent">
+          <Volume2 size={15} className="mt-0.5 shrink-0" />
+          {!music || alreadyOwnsFloor
+            ? "Heads up: whatever you pick plays for everyone in the room right away, together as background while you chat."
+            : `${music.startedByName} is already playing something - your pick joins the queue and plays next, or whenever they cancel theirs.`}
         </p>
 
         <div className="flex max-h-64 flex-col gap-0.5 overflow-y-auto rounded-[var(--radius-md)] border border-border p-1.5">

@@ -12,7 +12,6 @@ export function ConversationHeader({
   onOpenPhotoWall,
   onOpenGames,
   onOpenMusicPicker,
-  canManage,
 }: {
   onOpenSidebar: () => void;
   onToggleMembers: () => void;
@@ -21,7 +20,6 @@ export function ConversationHeader({
   onOpenPhotoWall: () => void;
   onOpenGames: () => void;
   onOpenMusicPicker: () => void;
-  canManage: boolean;
 }) {
   const channels = useRoomStore((s) => s.channels);
   const activeChannelId = useRoomStore((s) => s.activeChannelId);
@@ -60,19 +58,17 @@ export function ConversationHeader({
           </button>
         </Tooltip>
 
-        {canManage && (
-          <Tooltip label={music ? "Now playing - manage music" : "Play music"}>
-            <button
-              type="button"
-              onClick={onOpenMusicPicker}
-              aria-label="Play music"
-              className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-muted"
-            >
-              <Music size={18} />
-              {music && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" aria-hidden />}
-            </button>
-          </Tooltip>
-        )}
+        <Tooltip label={music ? "Now playing - manage music" : "Play music"}>
+          <button
+            type="button"
+            onClick={onOpenMusicPicker}
+            aria-label="Play music"
+            className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-muted"
+          >
+            <Music size={18} />
+            {music && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" aria-hidden />}
+          </button>
+        </Tooltip>
 
         <Tooltip label={myGameId ? "Back to your chess game" : "Play chess"}>
           <button

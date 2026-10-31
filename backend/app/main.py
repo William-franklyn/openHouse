@@ -677,6 +677,10 @@ def register_routes(app: FastAPI) -> None:
                 if music_state is not None:
                     await websocket.send_json({"type": "music_started", **music_state})
 
+                music_queue = await realtime.music_queue_snapshot(redis_client, room_id)
+                if music_queue:
+                    await websocket.send_json({"type": "music_queue_updated", "queue": music_queue})
+
                 for call in await realtime.active_calls_for_member(redis_client, member_id):
                     await websocket.send_json({"type": "call_presence", **call})
 

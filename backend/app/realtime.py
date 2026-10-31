@@ -139,6 +139,10 @@ def _music_key(room_id: str) -> str:
     return f"room_music:{room_id}"
 
 
+def _music_queue_key(room_id: str) -> str:
+    return f"room_music_queue:{room_id}"
+
+
 async def music_snapshot(redis, room_id: str) -> dict | None:
     """Current room-music state, if any is playing - same role as
     presence_snapshot: read fresh on every connect so a late joiner or a
@@ -151,6 +155,17 @@ async def music_snapshot(redis, room_id: str) -> dict | None:
         return json.loads(_decode(raw))
     except (TypeError, ValueError):
         return None
+
+
+async def music_queue_snapshot(redis, room_id: str) -> list[dict]:
+    raw_items = await redis.lrange(_music_queue_key(room_id), 0, -1)
+    queue = []
+    for raw in raw_items:
+        try:
+            queue.append(json.loads(_decode(raw)))
+        except (TypeError, ValueError):
+            continue
+    return queue
 
 
 # ---- Video call presence ----
@@ -485,10 +500,10 @@ async def handle_rename(session, settings, redis, hub, room, actor, data):
     await _publish_presence(session, redis, hub, room)
 
 
-async def handle_start_music(session, settings, redis, hub, room, actor, data):
-    if actor.role not in ("owner", "mod"):
-        raise DomainError("not_allowed", "Only the owner or a moderator can play music.")
+MUSIC_QUEUE_MAX = 25
 
+
+async def _resolve_track(session, settings, room, data: dict) -> dict:
     library_track_id = data.get("library_track_id")
     file_id = data.get("file_id")
 
@@ -496,36 +511,145 @@ async def handle_start_music(session, settings, redis, hub, room, actor, data):
         track = music_library.get_track(library_track_id)
         if track is None:
             raise DomainError("bad_request", "Unknown library track.")
-        state = {
+        return {
             "source": "library",
             "url": track["url"],
             "filename": track["title"],
             "attribution": f'{track["artist"]} · {track["license"]}',
         }
-    elif file_id:
+    if file_id:
         asset = await files_mod.get_file_or_404(session, room.id, file_id)
         if files_mod.file_extension(asset.filename) not in settings.MUSIC_EXTENSIONS:
             raise DomainError("file_type", "That file isn't a playable audio file.")
-        state = {"source": "upload", "file_id": asset.id, "filename": asset.filename}
-    else:
-        raise DomainError("bad_request", "No file specified.")
+        return {"source": "upload", "file_id": asset.id, "filename": asset.filename}
+    raise DomainError("bad_request", "No file specified.")
 
-    # Overwrites unconditionally - starting new music while something is
-    # already playing just replaces it, no special-case needed. Every
-    # connected client reloads on the fresh broadcast below.
-    state["started_by_member_id"] = actor.id
-    state["started_by_name"] = actor.display_name
-    state["started_at_ms"] = int(time.time() * 1000)
 
-    await redis.set(_music_key(room.id), json.dumps(state), ex=settings.ROOM_MUSIC_TTL_SECONDS)
-    await hub.publish(room.id, {"type": "music_started", **state})
+async def _save_queue(redis, settings, room_id: str, queue: list[dict]) -> None:
+    await redis.delete(_music_queue_key(room_id))
+    if queue:
+        await redis.rpush(_music_queue_key(room_id), *[json.dumps(t) for t in queue])
+        await redis.expire(_music_queue_key(room_id), settings.ROOM_MUSIC_TTL_SECONDS)
+
+
+async def _publish_music_queue(redis, hub, room_id: str) -> list[dict]:
+    queue = await music_queue_snapshot(redis, room_id)
+    await hub.publish(room_id, {"type": "music_queue_updated", "queue": queue})
+    return queue
+
+
+async def _advance_music(redis, settings, hub, room) -> None:
+    """One track's turn is over (it was stopped, or finished on its own) -
+    promote the next queued one to "now playing", or clear entirely if the
+    queue's empty. Shared by the manual-stop and natural-end paths, which
+    both just mean "this one's done, move on"."""
+    queue = await music_queue_snapshot(redis, room.id)
+    if not queue:
+        await redis.delete(_music_key(room.id))
+        await hub.publish(room.id, {"type": "music_stopped"})
+        return
+
+    next_track, *rest = queue
+    next_track["started_by_member_id"] = next_track.pop("requested_by_member_id")
+    next_track["started_by_name"] = next_track.pop("requested_by_name")
+    next_track.pop("queued_at_ms", None)
+    next_track["started_at_ms"] = int(time.time() * 1000)
+
+    await redis.set(_music_key(room.id), json.dumps(next_track), ex=settings.ROOM_MUSIC_TTL_SECONDS)
+    await hub.publish(room.id, {"type": "music_started", **next_track})
+    await _save_queue(redis, settings, room.id, rest)
+    await _publish_music_queue(redis, hub, room.id)
+
+
+async def handle_start_music(session, settings, redis, hub, room, actor, data):
+    # No role check, same reasoning as handle_start_call - picking a song
+    # for the room is a normal member action, not a mod/owner privilege.
+    track = await _resolve_track(session, settings, room, data)
+    track["id"] = new_id()
+
+    current = await music_snapshot(redis, room.id)
+    if current is None or current.get("started_by_member_id") == actor.id:
+        # Nothing playing, or it's your own track - swap it right away.
+        # There's no one to queue behind when it's your own pick replacing
+        # itself, so this doesn't touch the queue at all.
+        track["started_by_member_id"] = actor.id
+        track["started_by_name"] = actor.display_name
+        track["started_at_ms"] = int(time.time() * 1000)
+        await redis.set(_music_key(room.id), json.dumps(track), ex=settings.ROOM_MUSIC_TTL_SECONDS)
+        await hub.publish(room.id, {"type": "music_started", **track})
+        return
+
+    # Someone else's song is already playing - this joins the queue
+    # instead of cutting them off. One person, one queued slot at a time:
+    # picking a second song while you already have one waiting replaces
+    # it rather than piling up, so you can't just flood the line.
+    queue = [t for t in await music_queue_snapshot(redis, room.id) if t.get("requested_by_member_id") != actor.id]
+    if len(queue) >= MUSIC_QUEUE_MAX:
+        raise DomainError("bad_request", "The queue's full right now - try again once it clears up.")
+
+    track["requested_by_member_id"] = actor.id
+    track["requested_by_name"] = actor.display_name
+    track["queued_at_ms"] = int(time.time() * 1000)
+    queue.append(track)
+    await _save_queue(redis, settings, room.id, queue)
+    await _publish_music_queue(redis, hub, room.id)
+
+    # A direct, targeted heads-up to whoever's currently playing - not a
+    # demand, just "someone's waiting whenever you're ready to pass it on".
+    await hub.publish(
+        room.id,
+        {
+            "type": "music_requested",
+            "filename": track["filename"],
+            "requested_by_member_id": actor.id,
+            "requested_by_name": actor.display_name,
+        },
+        to_member_id=current.get("started_by_member_id"),
+    )
 
 
 async def handle_stop_music(session, settings, redis, hub, room, actor, data):
-    if actor.role not in ("owner", "mod"):
-        raise DomainError("not_allowed", "Only the owner or a moderator can stop the music.")
-    await redis.delete(_music_key(room.id))
-    await hub.publish(room.id, {"type": "music_stopped"})
+    """A deliberate, manual skip - only whoever's track is currently
+    playing (or a moderator, as a safety net) can cut it short. This is
+    what "I'll cancel mine so yours can play" actually calls."""
+    current = await music_snapshot(redis, room.id)
+    if current is None:
+        return
+    if actor.id != current.get("started_by_member_id") and actor.role not in ("owner", "mod"):
+        raise DomainError("not_allowed", "Only whoever started this song (or a moderator) can stop it.")
+    await _advance_music(redis, settings, hub, room)
+
+
+async def handle_music_track_ended(session, settings, redis, hub, room, actor, data):
+    """A track finishing on its own isn't "stopping someone's music" - any
+    listener's own <audio> element firing onEnded can report it, no
+    permission needed. track_id guards against several listeners' audio
+    elements all ending around the same moment and each independently
+    trying to advance - only the first report (for whichever track is
+    still actually current) does anything; the rest are no-ops."""
+    current = await music_snapshot(redis, room.id)
+    if current is None:
+        return
+    if data.get("track_id") and data.get("track_id") != current.get("id"):
+        return
+    await _advance_music(redis, settings, hub, room)
+
+
+async def handle_cancel_queued_music(session, settings, redis, hub, room, actor, data):
+    track_id = data.get("track_id")
+    if not track_id:
+        raise DomainError("bad_request", "Missing track_id.")
+
+    queue = await music_queue_snapshot(redis, room.id)
+    target = next((t for t in queue if t.get("id") == track_id), None)
+    if target is None:
+        raise DomainError("bad_request", "That queued track isn't there anymore.")
+    if actor.id != target.get("requested_by_member_id") and actor.role not in ("owner", "mod"):
+        raise DomainError("not_allowed", "Only whoever queued this (or a moderator) can remove it.")
+
+    queue = [t for t in queue if t.get("id") != track_id]
+    await _save_queue(redis, settings, room.id, queue)
+    await _publish_music_queue(redis, hub, room.id)
 
 
 async def handle_start_call(session, settings, redis, hub, room, actor, data):
@@ -753,6 +877,8 @@ HANDLERS = {
     "leave": handle_leave,
     "start_music": handle_start_music,
     "stop_music": handle_stop_music,
+    "music_track_ended": handle_music_track_ended,
+    "cancel_queued_music": handle_cancel_queued_music,
     "start_call": handle_start_call,
     "join_call": handle_join_call,
     "leave_call": handle_leave_call,

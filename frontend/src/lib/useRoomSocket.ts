@@ -84,6 +84,7 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
         break;
       case "music_started":
         store.setMusic({
+          id: event.id,
           source: event.source,
           fileId: event.file_id,
           url: event.url,
@@ -96,6 +97,27 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
         break;
       case "music_stopped":
         store.setMusic(null);
+        break;
+      case "music_queue_updated":
+        store.setMusicQueue(
+          event.queue.map((t) => ({
+            id: t.id,
+            source: t.source,
+            fileId: t.file_id,
+            url: t.url,
+            attribution: t.attribution,
+            filename: t.filename,
+            requestedByMemberId: t.requested_by_member_id,
+            requestedByName: t.requested_by_name,
+            queuedAtMs: t.queued_at_ms,
+          }))
+        );
+        break;
+      case "music_requested":
+        store.setMusicRequestNotice({
+          filename: event.filename,
+          requestedByName: event.requested_by_name,
+        });
         break;
       case "call_presence":
         store.setCallPresence(event.call_id, event.member_ids);

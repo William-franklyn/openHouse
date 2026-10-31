@@ -55,6 +55,7 @@ export interface LiveGame {
 export type ConnectionStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
 export interface RoomMusicState {
+  id: string;
   source: "upload" | "library";
   fileId?: string;
   url?: string;
@@ -63,6 +64,23 @@ export interface RoomMusicState {
   startedByMemberId: string;
   startedByName: string;
   startedAtMs: number;
+}
+
+export interface QueuedMusicTrack {
+  id: string;
+  source: "upload" | "library";
+  fileId?: string;
+  url?: string;
+  attribution?: string;
+  filename: string;
+  requestedByMemberId: string;
+  requestedByName: string;
+  queuedAtMs: number;
+}
+
+export interface MusicRequestNotice {
+  filename: string;
+  requestedByName: string;
 }
 
 interface RoomStoreState {
@@ -83,6 +101,8 @@ interface RoomStoreState {
   roomEnded: boolean;
   lastError: { code: string; message: string } | null;
   music: RoomMusicState | null;
+  musicQueue: QueuedMusicTrack[];
+  musicRequestNotice: MusicRequestNotice | null;
   // Every call_id this client currently knows about, keyed by call_id -
   // not a fixed "the call" slot, since multiple invite-based meetings can
   // be live in the same room at once.
@@ -154,6 +174,8 @@ interface RoomStoreState {
   setError: (code: string, message: string) => void;
   clearError: () => void;
   setMusic: (music: RoomMusicState | null) => void;
+  setMusicQueue: (queue: QueuedMusicTrack[]) => void;
+  setMusicRequestNotice: (notice: MusicRequestNotice | null) => void;
   setCallPresence: (callId: string, memberIds: string[]) => void;
   setMyCallId: (callId: string | null) => void;
   setIncomingCallInvite: (invite: IncomingCallInvite | null) => void;
@@ -193,6 +215,8 @@ const initialState = {
   roomEnded: false,
   lastError: null,
   music: null,
+  musicQueue: [],
+  musicRequestNotice: null,
   callPresenceByCallId: {} as Record<string, string[]>,
   myCallId: null,
   incomingCallInvite: null,
@@ -302,6 +326,8 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
   clearError: () => set({ lastError: null }),
 
   setMusic: (music) => set({ music }),
+  setMusicQueue: (musicQueue) => set({ musicQueue }),
+  setMusicRequestNotice: (musicRequestNotice) => set({ musicRequestNotice }),
 
   setCallPresence: (callId, memberIds) =>
     set((state) => ({ callPresenceByCallId: { ...state.callPresenceByCallId, [callId]: memberIds } })),

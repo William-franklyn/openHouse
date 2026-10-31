@@ -213,6 +213,7 @@ export interface WSError {
 
 export interface WSMusicStarted {
   type: "music_started";
+  id: string;
   source: "upload" | "library";
   file_id?: string;
   url?: string;
@@ -225,6 +226,30 @@ export interface WSMusicStarted {
 
 export interface WSMusicStopped {
   type: "music_stopped";
+}
+
+export interface QueuedMusicTrack {
+  id: string;
+  source: "upload" | "library";
+  file_id?: string;
+  url?: string;
+  attribution?: string;
+  filename: string;
+  requested_by_member_id: string;
+  requested_by_name: string;
+  queued_at_ms: number;
+}
+
+export interface WSMusicQueueUpdated {
+  type: "music_queue_updated";
+  queue: QueuedMusicTrack[];
+}
+
+export interface WSMusicRequested {
+  type: "music_requested";
+  filename: string;
+  requested_by_member_id: string;
+  requested_by_name: string;
 }
 
 export interface MusicLibraryTrack {
@@ -422,6 +447,8 @@ export type WSServerEvent =
   | WSError
   | WSMusicStarted
   | WSMusicStopped
+  | WSMusicQueueUpdated
+  | WSMusicRequested
   | WSCallPresence
   | WSCallInvite
   | WSCallOffer

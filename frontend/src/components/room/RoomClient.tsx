@@ -198,14 +198,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
           onOpenPhotoWall={() => setShowPhotoWall(true)}
           onOpenGames={() => (myGameId ? setShowGameBoard(true) : setShowGamesModal(true))}
           onOpenMusicPicker={() => setShowMusicPicker(true)}
-          canManage={canManage}
         />
         <LiveGamesBanner send={send} />
         <PinnedBanner />
         <MusicPlayer
           token={session.token}
-          canManage={canManage}
           onStop={() => send("stop_music")}
+          onTrackEnded={(trackId) => send("music_track_ended", { track_id: trackId })}
+          onCancelQueued={(trackId) => send("cancel_queued_music", { track_id: trackId })}
         />
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
