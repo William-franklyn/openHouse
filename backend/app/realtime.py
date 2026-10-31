@@ -650,8 +650,13 @@ async def handle_claim_game_link(session, settings, redis, hub, room, actor, dat
     game = await games_mod.get_game_by_token(session, room.id, token)
     if game is None:
         raise DomainError("bad_request", "That invite link isn't valid anymore.")
-    game = await games_mod.claim_link_challenge(session, room, game, actor)
+    game, is_fresh = await games_mod.claim_link_challenge(session, room, game, actor)
     state = await games_mod.build_state_event(session, game)
+    if not is_fresh:
+        # Re-opening the same link they already used - just resync them
+        # into the game, no second "started a game" announcement/broadcast.
+        await hub.publish(room.id, state, to_member_id=actor.id)
+        return
     await _broadcast_game_state(redis, hub, room, game, state)
     white = await session.get(Member, game.white_member_id)
     await hub.publish(room.id, games_mod.live_event(game, white, actor))

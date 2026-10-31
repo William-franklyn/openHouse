@@ -703,6 +703,56 @@ async def test_claiming_the_same_link_twice_only_the_first_succeeds(client, app)
         assert getattr(exc, "code", None) == "bad_request"
 
 
+async def test_reclaiming_your_own_already_claimed_link_resyncs_without_error(client, app):
+    """Covers the real bug this was written for: a guest reopens the exact
+    link they already used (WhatsApp chat history, a bookmark, a page
+    reload racing the URL cleanup) and should land back in their game,
+    not see "invalid link" for something that already worked."""
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    owner_ws = await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    token = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"][0]["link_token"]
+
+    friend = await join(client, data["room"]["code"], "Albert")
+    friend_ws = await register_socket(app, room_id, friend["member_id"])
+    await ws_dispatch(app, room_id, friend["member_id"], "claim_game_link", {"token": token})
+
+    # Re-opening the same link a second time must not raise.
+    await ws_dispatch(app, room_id, friend["member_id"], "claim_game_link", {"token": token})
+
+    states = [e for e in friend_ws.sent if e.get("type") == "game_state"]
+    assert len(states) == 2
+    assert states[0]["game_id"] == states[1]["game_id"]
+    assert states[1]["black_member_id"] == friend["member_id"]
+
+    # The re-claim must not post a second "started a game of chess" message.
+    channel_id = await _get_general_channel_id(client, room_id, data["session_token"])
+    resp = await client.get(f"/api/rooms/{room_id}/channels/{channel_id}/messages", headers=auth(data["session_token"]))
+    system_texts = [m["text"] for m in resp.json()["messages"] if m["kind"] == "system"]
+    assert sum("started a game of chess" in (t or "") for t in system_texts) == 1
+
+
+async def test_reclaiming_by_a_different_person_after_its_claimed_is_still_rejected(client, app):
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    owner_ws = await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    token = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"][0]["link_token"]
+
+    friend = await join(client, data["room"]["code"], "Albert")
+    stranger = await join(client, data["room"]["code"], "Stranger")
+    await register_socket(app, room_id, friend["member_id"])
+    await register_socket(app, room_id, stranger["member_id"])
+
+    await ws_dispatch(app, room_id, friend["member_id"], "claim_game_link", {"token": token})
+    try:
+        await ws_dispatch(app, room_id, stranger["member_id"], "claim_game_link", {"token": token})
+        assert False, "someone else claiming an already-taken link should still be rejected"
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "bad_request"
+
+
 async def test_cancelling_an_awaiting_link_frees_the_creator_and_does_not_broadcast_room_wide(client, app):
     data = await create_room(client)
     room_id, owner_id = data["room"]["id"], data["member"]["member_id"]

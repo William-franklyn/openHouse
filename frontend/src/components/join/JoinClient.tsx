@@ -48,6 +48,19 @@ export function JoinClient({
       });
   }, [code]);
 
+  // Reopening the exact same invite link a second time (WhatsApp chat
+  // history, a bookmark, a refresh) is completely normal - if there's
+  // already a session for this room, skip straight back in instead of
+  // making them click "Rejoin" on a form they've already filled out once.
+  // replace, not push, so the back button doesn't leave this screen in
+  // history to bounce back to.
+  useEffect(() => {
+    if (playToken && existingSession) {
+      router.replace(roomPath(existingSession.roomId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playToken, existingSession]);
+
   async function submitJoin(anonymous: boolean) {
     if (!preview) return;
     setSubmitting(anonymous ? "anon" : "name");
@@ -106,7 +119,7 @@ export function JoinClient({
     );
   }
 
-  if (!preview) {
+  if (!preview || (playToken && existingSession)) {
     return (
       <div className="flex justify-center py-16">
         <Spinner className="h-6 w-6 text-accent" />

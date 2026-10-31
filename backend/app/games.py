@@ -101,13 +101,23 @@ async def create_link_challenge(session, room, challenger: Member) -> Game:
 
 
 async def get_game_by_token(session, room_id: str, token: str) -> Game | None:
-    result = await session.execute(
-        select(Game).where(Game.room_id == room_id, Game.link_token == token, Game.status == "awaiting")
-    )
+    """Not filtered to status "awaiting" - claim_link_challenge needs to
+    see an already-claimed game too, to tell "someone else already took
+    this" apart from "you're re-opening the same link you already used"."""
+    result = await session.execute(select(Game).where(Game.room_id == room_id, Game.link_token == token))
     return result.scalars().first()
 
 
-async def claim_link_challenge(session, room, game: Game, claimant: Member) -> Game:
+async def claim_link_challenge(session, room, game: Game, claimant: Member) -> tuple[Game, bool]:
+    """Returns (game, is_fresh_claim). Claiming is idempotent for whoever
+    already holds the seat: reopening the exact same share link (from
+    WhatsApp's chat history, a bookmark, or a page reload that fires
+    before the URL gets cleaned up) is a completely normal thing for a
+    real guest to do, and should resync them into the game rather than
+    show a scary "invalid link" error for something that already
+    succeeded once."""
+    if claimant.id == game.black_member_id and game.status in ("active", "finished"):
+        return game, False
     if game.status != "awaiting":
         raise DomainError("bad_request", "That invite link isn't valid anymore.")
     if claimant.id == game.white_member_id:
@@ -119,7 +129,7 @@ async def claim_link_challenge(session, room, game: Game, claimant: Member) -> G
     game.status = "active"
     game.updated_at = utcnow()
     await session.commit()
-    return game
+    return game, True
 
 
 async def get_game_or_404(session, room_id: str, game_id: str) -> Game:
