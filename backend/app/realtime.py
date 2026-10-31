@@ -631,7 +631,33 @@ async def handle_cancel_game(session, settings, redis, hub, room, actor, data):
     game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
     black_id = game.black_member_id
     game = await games_mod.cancel_challenge(session, game, actor)
-    await hub.publish(room.id, {"type": "game_cancelled", "game_id": game.id}, to_member_id=black_id)
+    # black_id is None for an awaiting link-challenge nobody's claimed yet
+    # - hub.publish treats a missing to_member_id as room-wide, so skip
+    # the notification entirely rather than broadcasting it to everyone.
+    if black_id is not None:
+        await hub.publish(room.id, {"type": "game_cancelled", "game_id": game.id}, to_member_id=black_id)
+
+
+async def handle_create_game_link(session, settings, redis, hub, room, actor, data):
+    game = await games_mod.create_link_challenge(session, room, actor)
+    await hub.publish(room.id, games_mod.link_waiting_event(game, actor), to_member_id=actor.id)
+
+
+async def handle_claim_game_link(session, settings, redis, hub, room, actor, data):
+    token = data.get("token")
+    if not token:
+        raise DomainError("bad_request", "Missing token.")
+    game = await games_mod.get_game_by_token(session, room.id, token)
+    if game is None:
+        raise DomainError("bad_request", "That invite link isn't valid anymore.")
+    game = await games_mod.claim_link_challenge(session, room, game, actor)
+    state = await games_mod.build_state_event(session, game)
+    await _broadcast_game_state(redis, hub, room, game, state)
+    white = await session.get(Member, game.white_member_id)
+    await hub.publish(room.id, games_mod.live_event(game, white, actor))
+    await post_system_message(
+        session, settings, hub, room, f"♟️ {state['white_name']} and {state['black_name']} started a game of chess!"
+    )
 
 
 async def handle_game_move(session, settings, redis, hub, room, actor, data):
@@ -727,6 +753,8 @@ HANDLERS = {
     "resign_game": handle_resign_game,
     "watch_game": handle_watch_game,
     "unwatch_game": handle_unwatch_game,
+    "create_game_link": handle_create_game_link,
+    "claim_game_link": handle_claim_game_link,
 }
 
 

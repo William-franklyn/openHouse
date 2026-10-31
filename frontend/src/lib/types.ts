@@ -312,7 +312,7 @@ export interface WSPhotoShared {
 // needs a single myGameId slot, same shape as myCallId. ----
 
 export type GameKind = "chess";
-export type GameStatus = "pending" | "active" | "finished";
+export type GameStatus = "pending" | "awaiting" | "active" | "finished";
 export type GameResult = "white" | "black" | "draw";
 
 export interface WSGameInvite {
@@ -323,6 +323,17 @@ export interface WSGameInvite {
   challenger_name: string;
   opponent_member_id: string;
   opponent_name: string;
+}
+
+// A shareable link-challenge - no opponent picked yet, anyone who opens
+// the link (and isn't the creator) can claim the open seat.
+export interface WSGameLinkWaiting {
+  type: "game_link_waiting";
+  game_id: string;
+  kind: GameKind;
+  white_member_id: string;
+  white_name: string;
+  link_token: string;
 }
 
 export interface WSGameDeclined {
@@ -423,7 +434,8 @@ export type WSServerEvent =
   | WSGameState
   | WSGameLive
   | WSGameLiveEnded
-  | WSGameWatchers;
+  | WSGameWatchers
+  | WSGameLinkWaiting;
 
 export class ApiError extends Error {
   code: string;

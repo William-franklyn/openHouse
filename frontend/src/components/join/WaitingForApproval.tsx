@@ -15,10 +15,12 @@ export function WaitingForApproval({
   roomId,
   memberId,
   token,
+  playToken,
 }: {
   roomId: string;
   memberId: string;
   token: string;
+  playToken: string | null;
 }) {
   const router = useRouter();
   useRoomSocket(token);
@@ -27,9 +29,9 @@ export function WaitingForApproval({
 
   useEffect(() => {
     if (online.some((m) => m.member_id === memberId)) {
-      router.push(`/room/${roomId}`);
+      router.push(playToken ? `/room/${roomId}?play=${encodeURIComponent(playToken)}` : `/room/${roomId}`);
     }
-  }, [online, memberId, roomId, router]);
+  }, [online, memberId, roomId, router, playToken]);
 
   useEffect(() => {
     return () => useRoomStore.getState().reset();

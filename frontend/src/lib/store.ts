@@ -124,6 +124,11 @@ interface RoomStoreState {
   // it's needed for my own game too (excluded from liveGames on purpose),
   // not just games I might watch.
   watcherCounts: Record<string, number>;
+  // A link-challenge I created, awaiting someone to claim it - cleared
+  // the moment a real game_state for the same game_id arrives (claimed)
+  // or it's cancelled. Separate from pendingChallenge (that's a targeted
+  // invite to someone already present, not a shareable link).
+  linkWaitingGame: { gameId: string; linkToken: string } | null;
 
   initRoom: (params: {
     roomId: string;
@@ -166,6 +171,7 @@ interface RoomStoreState {
   setWatcherCount: (gameId: string, count: number) => void;
   setWatchingGameId: (gameId: string | null) => void;
   setWatchedGame: (game: GameState | null) => void;
+  setLinkWaitingGame: (game: { gameId: string; linkToken: string } | null) => void;
   reset: () => void;
 }
 
@@ -200,6 +206,7 @@ const initialState = {
   watchingGameId: null as string | null,
   watchedGame: null as GameState | null,
   watcherCounts: {} as Record<string, number>,
+  linkWaitingGame: null as { gameId: string; linkToken: string } | null,
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
@@ -352,6 +359,8 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
   setWatchingGameId: (gameId) => set({ watchingGameId: gameId }),
 
   setWatchedGame: (game) => set({ watchedGame: game }),
+
+  setLinkWaitingGame: (game) => set({ linkWaitingGame: game }),
 
   reset: () => set(initialState),
 }));

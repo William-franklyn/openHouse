@@ -595,3 +595,157 @@ async def test_leaderboard_aggregates_wins_losses_and_draws(client, app):
     assert rows[opp["member_id"]]["wins"] == 1
     assert rows[opp["member_id"]]["losses"] == 1
     assert rows[owner_id]["games_played"] == 2
+
+
+# 11. Shareable link invites (no opponent picked yet) -------------------------
+
+async def test_create_game_link_sends_waiting_state_only_to_creator(client, app):
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    owner_ws = await register_socket(app, room_id, owner_id)
+
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+
+    waiting = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"]
+    assert len(waiting) == 1
+    assert waiting[0]["white_member_id"] == owner_id
+    assert waiting[0]["white_name"] == "Owner"
+    assert isinstance(waiting[0]["link_token"], str) and len(waiting[0]["link_token"]) > 0
+
+
+async def test_claiming_a_link_starts_the_game_for_both(client, app):
+    data = await create_room(client)
+    room_id, owner_id, owner_token = data["room"]["id"], data["member"]["member_id"], data["session_token"]
+    owner_ws = await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    token = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"][0]["link_token"]
+
+    friend = await join(client, data["room"]["code"], "Albert")
+    friend_ws = await register_socket(app, room_id, friend["member_id"])
+
+    await ws_dispatch(app, room_id, friend["member_id"], "claim_game_link", {"token": token})
+
+    owner_states = [e for e in owner_ws.sent if e.get("type") == "game_state"]
+    friend_states = [e for e in friend_ws.sent if e.get("type") == "game_state"]
+    assert len(owner_states) == 1 and len(friend_states) == 1
+    assert owner_states[0]["status"] == "active"
+    assert owner_states[0]["white_member_id"] == owner_id
+    assert owner_states[0]["black_member_id"] == friend["member_id"]
+    assert owner_states[0]["black_name"] == "Albert"
+
+    channel_id = await _get_general_channel_id(client, room_id, owner_token)
+    text = await last_system_message(client, room_id, channel_id, owner_token)
+    assert "Owner" in text and "Albert" in text and "chess" in text.lower()
+
+
+async def test_cannot_claim_your_own_link(client, app):
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    owner_ws = await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    token = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"][0]["link_token"]
+
+    try:
+        await ws_dispatch(app, room_id, owner_id, "claim_game_link", {"token": token})
+        assert False, "claiming your own link should be rejected"
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "bad_request"
+
+
+async def test_cannot_claim_a_link_while_already_in_a_game(client, app):
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    owner_ws = await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    token = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"][0]["link_token"]
+
+    busy = await join(client, data["room"]["code"], "Busy")
+    other = await join(client, data["room"]["code"], "Other")
+    await _start_game(app, room_id, busy["member_id"], other["member_id"])
+    await register_socket(app, room_id, busy["member_id"])
+
+    try:
+        await ws_dispatch(app, room_id, busy["member_id"], "claim_game_link", {"token": token})
+        assert False, "claiming while already in a game should be rejected"
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "game_in_progress"
+
+
+async def test_claiming_an_unknown_token_is_rejected(client, app):
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    await register_socket(app, room_id, owner_id)
+
+    try:
+        await ws_dispatch(app, room_id, owner_id, "claim_game_link", {"token": "not-a-real-token"})
+        assert False, "an unknown token should be rejected"
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "bad_request"
+
+
+async def test_claiming_the_same_link_twice_only_the_first_succeeds(client, app):
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    owner_ws = await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    token = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"][0]["link_token"]
+
+    first = await join(client, data["room"]["code"], "First")
+    second = await join(client, data["room"]["code"], "Second")
+    await register_socket(app, room_id, first["member_id"])
+    await register_socket(app, room_id, second["member_id"])
+
+    await ws_dispatch(app, room_id, first["member_id"], "claim_game_link", {"token": token})
+    try:
+        await ws_dispatch(app, room_id, second["member_id"], "claim_game_link", {"token": token})
+        assert False, "a second claim of the same link should be rejected"
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "bad_request"
+
+
+async def test_cancelling_an_awaiting_link_frees_the_creator_and_does_not_broadcast_room_wide(client, app):
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    bystander = await join(client, data["room"]["code"], "Bystander")
+    owner_ws = await register_socket(app, room_id, owner_id)
+    bystander_ws = await register_socket(app, room_id, bystander["member_id"])
+
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    game_id = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"][0]["game_id"]
+
+    await ws_dispatch(app, room_id, owner_id, "cancel_game", {"game_id": game_id})
+
+    assert [e for e in bystander_ws.sent if e.get("type") == "game_cancelled"] == []
+
+    # Cancelling frees the creator to start a new link (or challenge).
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    assert len([e for e in owner_ws.sent if e.get("type") == "game_link_waiting"]) == 2
+
+
+async def test_connect_snapshot_resends_an_awaiting_link(client, app):
+    from app import games as games_mod
+
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    owner_ws = await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+    token = [e for e in owner_ws.sent if e.get("type") == "game_link_waiting"][0]["link_token"]
+
+    async with app.state.db.session() as session:
+        event = await games_mod.connect_snapshot_event(session, room_id, owner_id)
+    assert event["type"] == "game_link_waiting"
+    assert event["link_token"] == token
+
+
+async def test_having_an_awaiting_link_blocks_a_normal_challenge_too(client, app):
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+    opp = await join(client, data["room"]["code"], "Opponent")
+    await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "create_game_link", {})
+
+    try:
+        await ws_dispatch(app, room_id, owner_id, "challenge_to_chess", {"opponent_id": opp["member_id"]})
+        assert False, "an awaiting link should block starting a normal challenge too"
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "game_in_progress"

@@ -149,6 +149,9 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           store.setIncomingGameInvite(null);
         }
         break;
+      case "game_link_waiting":
+        store.setLinkWaitingGame({ gameId: event.game_id, linkToken: event.link_token });
+        break;
       case "game_state": {
         const gameState = {
           gameId: event.game_id,
@@ -172,9 +175,11 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           event.white_member_id === store.myMemberId || event.black_member_id === store.myMemberId;
         if (amPlayer) {
           // Accepting (or any later move) resolves whichever side of the
-          // invite flow I was on - both clear safely even if only one was set.
+          // invite flow I was on - all three clear safely even if only
+          // one was ever set (targeted invite, or a link someone claimed).
           if (store.pendingChallenge?.gameId === event.game_id) store.setPendingChallenge(null);
           if (store.incomingGameInvite?.gameId === event.game_id) store.setIncomingGameInvite(null);
+          if (store.linkWaitingGame?.gameId === event.game_id) store.setLinkWaitingGame(null);
           store.setMyGameId(event.game_id);
           store.setGame(gameState);
         } else {

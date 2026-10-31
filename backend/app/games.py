@@ -7,6 +7,7 @@ Business logic only, no HTTP/WebSocket awareness - realtime.py's handlers
 call into this, same split as rooms.py/members.py."""
 
 import json
+import secrets
 
 import chess
 from sqlalchemy import or_, select
@@ -33,14 +34,16 @@ def _color_of(game: Game, member_id: str) -> bool | None:
 
 
 async def get_live_game_for_member(session, room_id: str, member_id: str) -> Game | None:
-    """The one pending-or-active game this member is currently part of in
-    this room, if any. Used both to block starting a second one (keeps the
-    "one game at a time" invariant the frontend's single myGameId slot
-    relies on) and to build the connect-time snapshot for reconnects."""
+    """The one pending/awaiting/active game this member is currently part
+    of in this room, if any. Used both to block starting a second one
+    (keeps the "one game at a time" invariant the frontend's single
+    myGameId slot relies on) and to build the connect-time snapshot for
+    reconnects. "awaiting" games have no black_member_id yet, so this only
+    ever matches them via white_member_id."""
     result = await session.execute(
         select(Game).where(
             Game.room_id == room_id,
-            Game.status.in_(("pending", "active")),
+            Game.status.in_(("pending", "awaiting", "active")),
             or_(Game.white_member_id == member_id, Game.black_member_id == member_id),
         )
     )
@@ -69,6 +72,52 @@ async def create_challenge(session, room, challenger: Member, opponent: Member) 
         updated_at=utcnow(),
     )
     session.add(game)
+    await session.commit()
+    return game
+
+
+async def create_link_challenge(session, room, challenger: Member) -> Game:
+    """An open seat, not addressed to any specific member yet - for
+    inviting someone who isn't in the room (or even online anywhere) by
+    sharing a link, rather than picking from who's currently present."""
+    if await get_live_game_for_member(session, room.id, challenger.id) is not None:
+        raise DomainError("game_in_progress", "Finish or cancel your current game first.")
+
+    game = Game(
+        id=new_id(),
+        room_id=room.id,
+        kind="chess",
+        white_member_id=challenger.id,
+        black_member_id=None,
+        status="awaiting",
+        moves_json="[]",
+        link_token=secrets.token_urlsafe(8),
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+    session.add(game)
+    await session.commit()
+    return game
+
+
+async def get_game_by_token(session, room_id: str, token: str) -> Game | None:
+    result = await session.execute(
+        select(Game).where(Game.room_id == room_id, Game.link_token == token, Game.status == "awaiting")
+    )
+    return result.scalars().first()
+
+
+async def claim_link_challenge(session, room, game: Game, claimant: Member) -> Game:
+    if game.status != "awaiting":
+        raise DomainError("bad_request", "That invite link isn't valid anymore.")
+    if claimant.id == game.white_member_id:
+        raise DomainError("bad_request", "You can't join your own invite link.")
+    if await get_live_game_for_member(session, room.id, claimant.id) is not None:
+        raise DomainError("game_in_progress", "Finish or cancel your current game first.")
+
+    game.black_member_id = claimant.id
+    game.status = "active"
+    game.updated_at = utcnow()
     await session.commit()
     return game
 
@@ -103,7 +152,10 @@ async def decline_challenge(session, game: Game, actor: Member) -> Game:
 
 
 async def cancel_challenge(session, game: Game, actor: Member) -> Game:
-    if game.status != "pending":
+    """Covers both a targeted invite ("pending") and an open link
+    ("awaiting") - cancelling either just frees the challenger up to
+    start something else."""
+    if game.status not in ("pending", "awaiting"):
         raise DomainError("bad_request", "That challenge is no longer open.")
     if actor.id != game.white_member_id:
         raise DomainError("not_allowed", "Only the person who sent it can cancel it.")
@@ -304,10 +356,22 @@ def invite_event(game: Game, challenger: Member, opponent: Member) -> dict:
     }
 
 
+def link_waiting_event(game: Game, white: Member) -> dict:
+    return {
+        "type": "game_link_waiting",
+        "game_id": game.id,
+        "kind": game.kind,
+        "white_member_id": white.id,
+        "white_name": white.display_name,
+        "link_token": game.link_token,
+    }
+
+
 async def connect_snapshot_event(session, room_id: str, member_id: str) -> dict | None:
     """Replayed right after `ready` on every (re)connect - same role as
     music_snapshot/active_calls_for_member: don't lose track of a pending
-    challenge or an in-progress game across a reload."""
+    challenge, an open invite link, or an in-progress game across a
+    reload."""
     game = await get_live_game_for_member(session, room_id, member_id)
     if game is None:
         return None
@@ -317,4 +381,9 @@ async def connect_snapshot_event(session, room_id: str, member_id: str) -> dict 
         if white is None or black is None:
             return None
         return invite_event(game, white, black)
+    if game.status == "awaiting":
+        white = await session.get(Member, game.white_member_id)
+        if white is None:
+            return None
+        return link_waiting_event(game, white)
     return await build_state_event(session, game)

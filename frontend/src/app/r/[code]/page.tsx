@@ -5,5 +5,13 @@ export default async function JoinPage(props: PageProps<"/r/[code]">) {
   const searchParams = await props.searchParams;
   const inviteParam = searchParams.invite;
   const invitePrefill = Array.isArray(inviteParam) ? inviteParam[0] : inviteParam;
-  return <JoinClient code={code.toUpperCase()} invitePrefill={invitePrefill ?? null} />;
+  const playParam = searchParams.play;
+  const playToken = Array.isArray(playParam) ? playParam[0] : playParam;
+  return (
+    <JoinClient
+      code={code.toUpperCase()}
+      invitePrefill={invitePrefill ?? null}
+      playToken={playToken ?? null}
+    />
+  );
 }

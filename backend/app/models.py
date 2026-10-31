@@ -196,7 +196,9 @@ class Game(Base):
     room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(16), nullable=False, default="chess")
     white_member_id: Mapped[str] = mapped_column(String(32), nullable=False)
-    black_member_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Null until someone claims a shareable link-challenge (status
+    # "awaiting") - every other status always has both colors set.
+    black_member_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     # Append-only log of UCI moves ("e2e4", "e7e5", ...), same spirit as
     # the messages table's seq'd log - the board is always a replay of
@@ -205,6 +207,9 @@ class Game(Base):
     moves_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     result: Mapped[str | None] = mapped_column(String(8), nullable=True)
     termination: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Set only for "awaiting" link-challenges - whoever has this token
+    # (room-scoped, see games.get_game_by_token) claims the open seat.
+    link_token: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 

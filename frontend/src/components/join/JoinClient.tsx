@@ -11,8 +11,20 @@ import { loadSession, saveSession, clearSession, StoredSession } from "@/lib/ses
 import { ApiError, RoomPublic } from "@/lib/types";
 import { WaitingForApproval } from "./WaitingForApproval";
 
-export function JoinClient({ code, invitePrefill }: { code: string; invitePrefill: string | null }) {
+export function JoinClient({
+  code,
+  invitePrefill,
+  playToken,
+}: {
+  code: string;
+  invitePrefill: string | null;
+  playToken: string | null;
+}) {
   const router = useRouter();
+  // Carried through to /room/[id] regardless of path (fresh join, pending
+  // approval, or rejoining an existing session) - RoomClient is what
+  // actually claims it once the socket connects.
+  const roomPath = (roomId: string) => (playToken ? `/room/${roomId}?play=${encodeURIComponent(playToken)}` : `/room/${roomId}`);
   const [preview, setPreview] = useState<RoomPublic | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [existingSession, setExistingSession] = useState<StoredSession | null>(null);
@@ -57,7 +69,7 @@ export function JoinClient({ code, invitePrefill }: { code: string; invitePrefil
       if (result.status === "pending") {
         setPending({ memberId: result.member_id, token: result.session_token });
       } else {
-        router.push(`/room/${result.room_id}`);
+        router.push(roomPath(result.room_id));
       }
     } catch (err) {
       setJoinError(err instanceof ApiError ? err.message : "Couldn't join that room.");
@@ -72,7 +84,14 @@ export function JoinClient({ code, invitePrefill }: { code: string; invitePrefil
   }
 
   if (pending) {
-    return <WaitingForApproval roomId={preview!.id} memberId={pending.memberId} token={pending.token} />;
+    return (
+      <WaitingForApproval
+        roomId={preview!.id}
+        memberId={pending.memberId}
+        token={pending.token}
+        playToken={playToken}
+      />
+    );
   }
 
   if (loadError) {
@@ -105,6 +124,11 @@ export function JoinClient({ code, invitePrefill }: { code: string; invitePrefil
         <p className="mt-3 text-xs text-muted">
           Be respectful. Reports go to the room&apos;s house owner and moderators, and the platform team.
         </p>
+        {playToken && (
+          <p className="mt-3 text-xs text-accent">
+            ♟️ You&apos;ve been invited to a chess game — join in and you&apos;ll be dropped right into it.
+          </p>
+        )}
         {preview.local_mode && (
           <p className="mt-3 text-xs text-accent">
             📶 This room is in Local mode right now — you&apos;ll need to be on the same Wi-Fi or
@@ -115,7 +139,7 @@ export function JoinClient({ code, invitePrefill }: { code: string; invitePrefil
 
       {existingSession && (
         <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
-          <Button onClick={() => router.push(`/room/${existingSession.roomId}`)}>
+          <Button onClick={() => router.push(roomPath(existingSession.roomId))}>
             Rejoin as {existingSession.name}
           </Button>
           <button

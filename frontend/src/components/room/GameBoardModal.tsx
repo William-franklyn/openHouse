@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Eye, Flag, RotateCcw, Trophy, Volume2, VolumeX, X } from "lucide-react";
+import { Eye, Flag, Link2, RotateCcw, Trophy, Volume2, VolumeX, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { useRoomStore, GameState } from "@/lib/store";
 import {
@@ -18,6 +18,7 @@ import {
 import { ChessBoard } from "./ChessBoard";
 import { CelebrationOverlay } from "./CelebrationOverlay";
 import { LeaderboardPanel } from "./LeaderboardPanel";
+import { ShareLinkPanel } from "./ShareLinkPanel";
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
 
@@ -25,26 +26,32 @@ export function GameBoardModal({
   open,
   onClose,
   myMemberId,
+  myName,
   roomId,
+  roomCode,
   token,
   send,
 }: {
   open: boolean;
   onClose: () => void;
   myMemberId: string;
+  myName: string;
   roomId: string;
+  roomCode: string;
   token: string;
   send: SendFn;
 }) {
   const game = useRoomStore((s) => s.game);
   const watchingGameId = useRoomStore((s) => s.watchingGameId);
   const watchedGame = useRoomStore((s) => s.watchedGame);
+  const linkWaitingGame = useRoomStore((s) => s.linkWaitingGame);
 
-  // A fresh watch_game takes visual priority - it's the action the user
-  // just took. Your own game isn't lost, just not the one on screen; the
-  // chess icon's badge still gets you back to it.
-  const mode: "watch" | "play" = watchingGameId ? "watch" : "play";
-  const activeGame: GameState | null = mode === "watch" ? watchedGame : open ? game : null;
+  // Priority: a fresh watch_game is the action the user just took, then an
+  // open invite link awaiting a claim, then your own in-progress game.
+  // Nothing here is ever lost by being superseded - the chess icon's
+  // badge still gets you back to whichever one isn't on screen.
+  const mode: "watch" | "awaiting" | "play" = watchingGameId ? "watch" : linkWaitingGame ? "awaiting" : "play";
+  const activeGame: GameState | null = mode === "watch" ? watchedGame : mode === "play" && open ? game : null;
 
   const watcherCount = useRoomStore((s) => s.watcherCounts[activeGame?.gameId ?? ""] ?? 0);
 
@@ -91,6 +98,20 @@ export function GameBoardModal({
 
     prevRef.current = { gameId: activeGame.gameId, movesLen: activeGame.moves.length, gameOver: activeGame.gameOver };
   }, [activeGame, mode, myColor]);
+
+  if (mode === "awaiting" && linkWaitingGame) {
+    return (
+      <AwaitingLinkCard
+        linkToken={linkWaitingGame.linkToken}
+        myName={myName}
+        roomCode={roomCode}
+        onCancel={() => {
+          send("cancel_game", { game_id: linkWaitingGame.gameId });
+          useRoomStore.getState().setLinkWaitingGame(null);
+        }}
+      />
+    );
+  }
 
   if (!activeGame) return null;
 
@@ -325,6 +346,68 @@ function PlayerCard({
           {name} {isMe && <span className="text-violet-300">(you)</span>}
         </p>
         <p className="text-[10px] uppercase tracking-wide text-white/40">{color}</p>
+      </div>
+    </div>
+  );
+}
+
+function AwaitingLinkCard({
+  linkToken,
+  myName,
+  roomCode,
+  onCancel,
+}: {
+  linkToken: string;
+  myName: string;
+  roomCode: string;
+  onCancel: () => void;
+}) {
+  const link =
+    typeof window !== "undefined" ? `${window.location.origin}/r/${roomCode}?play=${linkToken}` : "";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+      <div className="flex w-full max-w-sm flex-col overflow-hidden rounded-[var(--radius-lg)] border border-violet-500/20 bg-gradient-to-b from-[#1b1538] to-[#0d0a1c] text-white shadow-[0_0_60px_rgba(124,58,237,0.25)]">
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-white/5 px-4">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">♟️</span>
+            <h2 className="text-[13px] font-extrabold tracking-wide text-white">CHESS ARENA</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel invite"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-col items-center gap-4 p-5 text-center">
+          <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-violet-500/15 text-violet-300">
+            <Link2 size={20} className="animate-recording-pulse" />
+          </span>
+          <div>
+            <p className="text-[14px] font-bold text-white">Waiting for someone to join…</p>
+            <p className="mt-1 text-[12px] text-white/50">
+              Share this link - whoever opens it gets dropped straight into this game with you.
+            </p>
+          </div>
+
+          <ShareLinkPanel
+            link={link}
+            shareText={`${myName} invites you to play chess on Openhouse! Join here:`}
+            dark
+          />
+
+          <button
+            type="button"
+            onClick={onCancel}
+            className="mt-1 text-[12px] font-medium text-white/40 hover:text-white/70"
+          >
+            Cancel invite
+          </button>
+        </div>
       </div>
     </div>
   );

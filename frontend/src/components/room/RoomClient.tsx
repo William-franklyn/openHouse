@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { api } from "@/lib/api";
@@ -36,6 +36,8 @@ import { LiveGamesBanner } from "./LiveGamesBanner";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const claimedPlayTokenRef = useRef<string | null>(null);
   const [session, setSession] = useState<StoredSession | null>(null);
   const [room, setRoom] = useState<RoomPublic | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -60,6 +62,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const myMemberId = useRoomStore((s) => s.myMemberId);
   const myCallId = useRoomStore((s) => s.myCallId);
   const myGameId = useRoomStore((s) => s.myGameId);
+  const linkWaitingGame = useRoomStore((s) => s.linkWaitingGame);
   const ownershipOfferFrom = useRoomStore((s) => s.ownershipOfferFrom);
   const removedReason = useRoomStore((s) => s.removedReason);
   const roomDeletedMessage = useRoomStore((s) => s.roomDeletedMessage);
@@ -109,10 +112,23 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // A new game_id (challenge just accepted, or a reconnect snapshot found
   // one already active) pops the board open for both players - closing it
   // afterward only hides it (myGameId itself isn't cleared), so it doesn't
-  // reopen on its own again until the next genuinely new game.
+  // reopen on its own again until the next genuinely new game. A fresh
+  // invite link you just generated does the same.
   useEffect(() => {
-    if (myGameId) setShowGameBoard(true);
-  }, [myGameId]);
+    if (myGameId || linkWaitingGame) setShowGameBoard(true);
+  }, [myGameId, linkWaitingGame]);
+
+  // A ?play=<token> in the URL (from an invite link) gets claimed once the
+  // socket is open, then stripped from the URL so a refresh doesn't
+  // re-send it. Guarded by a ref, not just the query param itself, since
+  // the param can briefly still be present across a reconnect.
+  useEffect(() => {
+    const token = searchParams.get("play");
+    if (!token || status !== "open" || claimedPlayTokenRef.current === token) return;
+    claimedPlayTokenRef.current = token;
+    send("claim_game_link", { token });
+    router.replace(`/room/${roomId}`);
+  }, [searchParams, status, send, router, roomId]);
 
   if (roomDeletedMessage) return <TerminalStateOverlay roomId={roomId} message={roomDeletedMessage} />;
   if (removedReason) return <TerminalStateOverlay roomId={roomId} message={removedReason} />;
@@ -311,6 +327,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
           onClose={() => setShowStartGame(false)}
           myMemberId={myMemberId}
           onChallenge={(opponentId) => send("challenge_to_chess", { opponent_id: opponentId })}
+          onInviteLink={() => send("create_game_link")}
         />
       )}
       {myMemberId && (
@@ -318,7 +335,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
           open={showGameBoard}
           onClose={() => setShowGameBoard(false)}
           myMemberId={myMemberId}
+          myName={session.name}
           roomId={roomId}
+          roomCode={room.code}
           token={session.token}
           send={send}
         />
