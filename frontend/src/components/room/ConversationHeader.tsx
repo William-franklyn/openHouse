@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, Hash, Users, Video, Images, ChessKnight } from "lucide-react";
+import { Menu, Hash, Users, Video, Images, ChessKnight, Music } from "lucide-react";
 import { useRoomStore } from "@/lib/store";
 import { Tooltip } from "@/components/ui/Tooltip";
 
@@ -11,6 +11,8 @@ export function ConversationHeader({
   onOpenStartCall,
   onOpenPhotoWall,
   onOpenGames,
+  onOpenMusicPicker,
+  canManage,
 }: {
   onOpenSidebar: () => void;
   onToggleMembers: () => void;
@@ -18,11 +20,14 @@ export function ConversationHeader({
   onOpenStartCall: () => void;
   onOpenPhotoWall: () => void;
   onOpenGames: () => void;
+  onOpenMusicPicker: () => void;
+  canManage: boolean;
 }) {
   const channels = useRoomStore((s) => s.channels);
   const activeChannelId = useRoomStore((s) => s.activeChannelId);
   const onlineCount = useRoomStore((s) => s.online.length);
   const myGameId = useRoomStore((s) => s.myGameId);
+  const music = useRoomStore((s) => s.music);
   const channel = channels.find((c) => c.id === activeChannelId);
 
   return (
@@ -54,6 +59,20 @@ export function ConversationHeader({
             <Video size={18} />
           </button>
         </Tooltip>
+
+        {canManage && (
+          <Tooltip label={music ? "Now playing - manage music" : "Play music"}>
+            <button
+              type="button"
+              onClick={onOpenMusicPicker}
+              aria-label="Play music"
+              className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-muted"
+            >
+              <Music size={18} />
+              {music && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" aria-hidden />}
+            </button>
+          </Tooltip>
+        )}
 
         <Tooltip label={myGameId ? "Back to your chess game" : "Play chess"}>
           <button

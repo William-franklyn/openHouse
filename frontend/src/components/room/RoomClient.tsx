@@ -186,7 +186,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onOpenCreateChannel={() => setShowCreateChannel(true)}
         onInvite={() => setShowInvite(true)}
         onSettings={() => setShowSettings(true)}
-        onOpenMusicPicker={() => setShowMusicPicker(true)}
         onLogout={handleLogout}
       />
 
@@ -198,6 +197,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
           onOpenStartCall={() => setShowStartCall(true)}
           onOpenPhotoWall={() => setShowPhotoWall(true)}
           onOpenGames={() => (myGameId ? setShowGameBoard(true) : setShowGamesModal(true))}
+          onOpenMusicPicker={() => setShowMusicPicker(true)}
+          canManage={canManage}
         />
         <LiveGamesBanner send={send} />
         <PinnedBanner />
