@@ -28,9 +28,11 @@ import { StartCallModal } from "./StartCallModal";
 import { IncomingCallToast } from "./IncomingCallToast";
 import { PhotoWallModal } from "./PhotoWallModal";
 import { StartGameModal } from "./StartGameModal";
+import { GamesModal } from "./GamesModal";
 import { GameBoardModal } from "./GameBoardModal";
 import { IncomingGameToast } from "./IncomingGameToast";
 import { OutgoingChallengeToast } from "./OutgoingChallengeToast";
+import { LiveGamesBanner } from "./LiveGamesBanner";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
@@ -45,6 +47,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [showMusicPicker, setShowMusicPicker] = useState(false);
   const [showStartCall, setShowStartCall] = useState(false);
   const [showPhotoWall, setShowPhotoWall] = useState(false);
+  const [showGamesModal, setShowGamesModal] = useState(false);
   const [showStartGame, setShowStartGame] = useState(false);
   const [showGameBoard, setShowGameBoard] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ memberId?: string; messageId?: string } | null>(null);
@@ -178,8 +181,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
           membersOpen={showMembers}
           onOpenStartCall={() => setShowStartCall(true)}
           onOpenPhotoWall={() => setShowPhotoWall(true)}
-          onOpenGames={() => (myGameId ? setShowGameBoard(true) : setShowStartGame(true))}
+          onOpenGames={() => (myGameId ? setShowGameBoard(true) : setShowGamesModal(true))}
         />
+        <LiveGamesBanner send={send} />
         <PinnedBanner />
         <MusicPlayer
           token={session.token}
@@ -296,6 +300,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
         roomId={roomId}
         token={session.token}
       />
+      <GamesModal
+        open={showGamesModal}
+        onClose={() => setShowGamesModal(false)}
+        onPickChess={() => setShowStartGame(true)}
+      />
       {myMemberId && (
         <StartGameModal
           open={showStartGame}
@@ -309,6 +318,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
           open={showGameBoard}
           onClose={() => setShowGameBoard(false)}
           myMemberId={myMemberId}
+          roomId={roomId}
+          token={session.token}
           send={send}
         />
       )}

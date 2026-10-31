@@ -458,6 +458,14 @@ def register_routes(app: FastAPI) -> None:
             ]
         }
 
+    @app.get("/api/rooms/{room_id}/games/leaderboard")
+    async def games_leaderboard_route(
+        room_id: str,
+        actor: Member = Depends(require_room_member),
+        session=Depends(get_session),
+    ):
+        return {"rows": await games_mod.leaderboard(session, room_id)}
+
     @app.post("/api/rooms/{room_id}/files")
     async def upload_file_route(
         room_id: str,
@@ -676,6 +684,9 @@ def register_routes(app: FastAPI) -> None:
                 if game_event is not None:
                     await websocket.send_json(game_event)
 
+                for live in await games_mod.live_games_for_room(session, room_id, exclude_member_id=member_id):
+                    await websocket.send_json(live)
+
                 while True:
                     raw = await _receive_json(websocket)
                     if raw is None:
@@ -703,6 +714,10 @@ def register_routes(app: FastAPI) -> None:
                         pass
                     try:
                         await realtime.cleanup_call_presence_on_disconnect(redis_client, hub, room_id, member_id)
+                    except Exception:
+                        pass
+                    try:
+                        await realtime.cleanup_watchers_on_disconnect(redis_client, hub, room_id, member_id)
                     except Exception:
                         pass
 

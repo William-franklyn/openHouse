@@ -149,13 +149,8 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           store.setIncomingGameInvite(null);
         }
         break;
-      case "game_state":
-        // Accepting (or any later move) resolves whichever side of the
-        // invite flow I was on - both clear safely even if only one was set.
-        if (store.pendingChallenge?.gameId === event.game_id) store.setPendingChallenge(null);
-        if (store.incomingGameInvite?.gameId === event.game_id) store.setIncomingGameInvite(null);
-        store.setMyGameId(event.game_id);
-        store.setGame({
+      case "game_state": {
+        const gameState = {
           gameId: event.game_id,
           status: event.status,
           whiteMemberId: event.white_member_id,
@@ -167,11 +162,52 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           turn: event.turn,
           legalMoves: event.legal_moves,
           inCheck: event.in_check,
+          lastMoveWasCapture: event.last_move_was_capture,
           gameOver: event.game_over,
           result: event.result,
           termination: event.termination,
           lastMove: event.last_move,
-        });
+        };
+        const amPlayer =
+          event.white_member_id === store.myMemberId || event.black_member_id === store.myMemberId;
+        if (amPlayer) {
+          // Accepting (or any later move) resolves whichever side of the
+          // invite flow I was on - both clear safely even if only one was set.
+          if (store.pendingChallenge?.gameId === event.game_id) store.setPendingChallenge(null);
+          if (store.incomingGameInvite?.gameId === event.game_id) store.setIncomingGameInvite(null);
+          store.setMyGameId(event.game_id);
+          store.setGame(gameState);
+        } else {
+          // Anyone else receiving game_state only got it because they
+          // asked to watch_game - route it to the spectator slot, never
+          // the "my own game" one.
+          store.setWatchedGame(gameState);
+        }
+        break;
+      }
+      case "game_live":
+        // Room-wide broadcast reaches the players too (it's unfiltered on
+        // the server) - skip it for my own game, myGameId/game already
+        // covers that, and I shouldn't see a "spectate" banner for myself.
+        if (event.white_member_id !== store.myMemberId && event.black_member_id !== store.myMemberId) {
+          store.setLiveGame({
+            gameId: event.game_id,
+            whiteMemberId: event.white_member_id,
+            whiteName: event.white_name,
+            blackMemberId: event.black_member_id,
+            blackName: event.black_name,
+          });
+        }
+        break;
+      case "game_live_ended":
+        store.removeLiveGame(event.game_id);
+        if (store.watchingGameId === event.game_id) {
+          store.setWatchingGameId(null);
+          store.setWatchedGame(null);
+        }
+        break;
+      case "game_watchers":
+        store.setWatcherCount(event.game_id, event.count);
         break;
       case "photo_shared":
         store.addPhoto({

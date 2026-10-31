@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     METERED_API_KEY: str | None = None
     METERED_SUBDOMAIN: str = "openhouse"
 
+    # ---- Games ----
+    # Safety net matching CALL_TTL_SECONDS above - bounds how long a
+    # spectator's "watching" presence can survive a crash/bug in the
+    # disconnect cleanup path. The game itself isn't TTL'd (it lives in
+    # Postgres, not Redis) - only who's currently watching it live is.
+    GAME_WATCH_TTL_SECONDS: int = 600
+
     # ---- Rate limits ----
     MESSAGE_RATE_LIMIT: int = 10
     MESSAGE_RATE_WINDOW_SECONDS: int = 10

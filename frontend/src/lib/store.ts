@@ -34,10 +34,22 @@ export interface GameState {
   turn: "white" | "black";
   legalMoves: string[];
   inCheck: boolean;
+  lastMoveWasCapture: boolean;
   gameOver: boolean;
   result: GameResult | null;
   termination: string | null;
   lastMove: string | null;
+}
+
+// A room-wide "live now" banner entry - lighter than GameState (no board),
+// for games this member isn't playing in. Clicking one sends watch_game,
+// which fetches the real GameState for read-only viewing.
+export interface LiveGame {
+  gameId: string;
+  whiteMemberId: string;
+  whiteName: string;
+  blackMemberId: string;
+  blackName: string;
 }
 
 export type ConnectionStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
@@ -100,6 +112,19 @@ interface RoomStoreState {
   myGameId: string | null;
   game: GameState | null;
 
+  // Every currently-live game in the room that I'm NOT playing in, keyed
+  // by game_id - the non-interrupting room-wide "X vs Y is live" banner.
+  liveGames: Record<string, LiveGame>;
+  // Spectating is tracked separately from my own game (myGameId/game) -
+  // you can watch a game that isn't yours, even while not playing one of
+  // your own, and the two must never collide in the same slot.
+  watchingGameId: string | null;
+  watchedGame: GameState | null;
+  // Spectator counts, keyed by game_id - decoupled from liveGames since
+  // it's needed for my own game too (excluded from liveGames on purpose),
+  // not just games I might watch.
+  watcherCounts: Record<string, number>;
+
   initRoom: (params: {
     roomId: string;
     memberId: string;
@@ -136,6 +161,11 @@ interface RoomStoreState {
   setPendingChallenge: (challenge: { gameId: string; opponentName: string } | null) => void;
   setMyGameId: (gameId: string | null) => void;
   setGame: (game: GameState | null) => void;
+  setLiveGame: (game: LiveGame) => void;
+  removeLiveGame: (gameId: string) => void;
+  setWatcherCount: (gameId: string, count: number) => void;
+  setWatchingGameId: (gameId: string | null) => void;
+  setWatchedGame: (game: GameState | null) => void;
   reset: () => void;
 }
 
@@ -166,6 +196,10 @@ const initialState = {
   pendingChallenge: null as { gameId: string; opponentName: string } | null,
   myGameId: null as string | null,
   game: null as GameState | null,
+  liveGames: {} as Record<string, LiveGame>,
+  watchingGameId: null as string | null,
+  watchedGame: null as GameState | null,
+  watcherCounts: {} as Record<string, number>,
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
@@ -300,6 +334,24 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
   setMyGameId: (gameId) => set({ myGameId: gameId }),
 
   setGame: (game) => set({ game }),
+
+  setLiveGame: (game) =>
+    set((state) => ({ liveGames: { ...state.liveGames, [game.gameId]: game } })),
+
+  removeLiveGame: (gameId) =>
+    set((state) => {
+      if (!(gameId in state.liveGames)) return {};
+      const next = { ...state.liveGames };
+      delete next[gameId];
+      return { liveGames: next };
+    }),
+
+  setWatcherCount: (gameId, count) =>
+    set((state) => ({ watcherCounts: { ...state.watcherCounts, [gameId]: count } })),
+
+  setWatchingGameId: (gameId) => set({ watchingGameId: gameId }),
+
+  setWatchedGame: (game) => set({ watchedGame: game }),
 
   reset: () => set(initialState),
 }));

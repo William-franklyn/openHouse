@@ -8,6 +8,7 @@ import {
   IceServersResponse,
   InviteCreated,
   JoinResponse,
+  LeaderboardResponse,
   MusicLibraryResponse,
   RecoverResponse,
   ReportResponse,
@@ -155,6 +156,10 @@ export const api = {
 
   roomPhotos(roomId: string, token: string) {
     return request<RoomPhotosResponse>(`/api/rooms/${roomId}/photos`, { token });
+  },
+
+  gamesLeaderboard(roomId: string, token: string) {
+    return request<LeaderboardResponse>(`/api/rooms/${roomId}/games/leaderboard`, { token });
   },
 
   async uploadFile(

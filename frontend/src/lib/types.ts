@@ -349,10 +349,48 @@ export interface WSGameState {
   turn: "white" | "black";
   legal_moves: string[];
   in_check: boolean;
+  last_move_was_capture: boolean;
   game_over: boolean;
   result: GameResult | null;
   termination: string | null;
   last_move: string | null;
+}
+
+// A lightweight room-wide "X vs Y is live" announcement - no board state,
+// just enough for a non-player's banner. watch_game is what actually
+// fetches the full board (as a WSGameState sent directly to the watcher).
+export interface WSGameLive {
+  type: "game_live";
+  game_id: string;
+  kind: GameKind;
+  white_member_id: string;
+  white_name: string;
+  black_member_id: string;
+  black_name: string;
+}
+
+export interface WSGameLiveEnded {
+  type: "game_live_ended";
+  game_id: string;
+}
+
+export interface WSGameWatchers {
+  type: "game_watchers";
+  game_id: string;
+  count: number;
+}
+
+export interface LeaderboardRow {
+  member_id: string;
+  name: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  games_played: number;
+}
+
+export interface LeaderboardResponse {
+  rows: LeaderboardRow[];
 }
 
 export type WSServerEvent =
@@ -382,7 +420,10 @@ export type WSServerEvent =
   | WSGameInvite
   | WSGameDeclined
   | WSGameCancelled
-  | WSGameState;
+  | WSGameState
+  | WSGameLive
+  | WSGameLiveEnded
+  | WSGameWatchers;
 
 export class ApiError extends Error {
   code: string;

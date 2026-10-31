@@ -222,6 +222,70 @@ async def cleanup_call_presence_on_disconnect(redis, hub, room_id: str, member_i
     await redis.delete(_member_calls_key(member_id))
 
 
+# ---- Game spectators ----
+# Watching is ephemeral connection-based presence (same shape as call
+# presence above) layered on top of a game, which is itself durable
+# (Postgres). Losing your watcher registration on disconnect is fine -
+# unlike a dropped call, nothing about the game itself depends on it.
+
+
+def _watchers_key(game_id: str) -> str:
+    return f"game_watchers:{game_id}"
+
+
+def _member_watching_key(member_id: str) -> str:
+    return f"member_watching_games:{member_id}"
+
+
+async def watchers_snapshot(redis, game_id: str) -> list[str]:
+    raw_ids = await redis.smembers(_watchers_key(game_id))
+    return [_decode(v) for v in raw_ids]
+
+
+async def _publish_watcher_count(redis, hub, room_id: str, game_id: str) -> None:
+    count = len(await watchers_snapshot(redis, game_id))
+    await hub.publish(room_id, {"type": "game_watchers", "game_id": game_id, "count": count})
+
+
+async def _watch_game(redis, hub, settings, room_id: str, game_id: str, member_id: str) -> None:
+    await redis.sadd(_watchers_key(game_id), member_id)
+    await redis.expire(_watchers_key(game_id), settings.GAME_WATCH_TTL_SECONDS)
+    await redis.sadd(_member_watching_key(member_id), game_id)
+    await redis.expire(_member_watching_key(member_id), settings.GAME_WATCH_TTL_SECONDS)
+    await _publish_watcher_count(redis, hub, room_id, game_id)
+
+
+async def _unwatch_game(redis, hub, room_id: str, game_id: str, member_id: str) -> None:
+    await redis.srem(_watchers_key(game_id), member_id)
+    await redis.srem(_member_watching_key(member_id), game_id)
+    await _publish_watcher_count(redis, hub, room_id, game_id)
+
+
+async def cleanup_watchers_on_disconnect(redis, hub, room_id: str, member_id: str) -> None:
+    """Mirrors cleanup_call_presence_on_disconnect - a tab closing never
+    gets to send unwatch_game, so without this a departed spectator would
+    count forever in every game they were watching."""
+    raw_ids = await redis.smembers(_member_watching_key(member_id))
+    for raw in raw_ids:
+        game_id = _decode(raw)
+        removed = await redis.srem(_watchers_key(game_id), member_id)
+        if removed:
+            await _publish_watcher_count(redis, hub, room_id, game_id)
+    await redis.delete(_member_watching_key(member_id))
+
+
+async def _broadcast_game_state(redis, hub, room, game, state: dict) -> None:
+    """Players always get it directly; watchers get it too, looked up
+    fresh each time rather than kept in the event - a watcher list can
+    change between moves."""
+    await hub.publish(room.id, state, to_member_id=game.white_member_id)
+    await hub.publish(room.id, state, to_member_id=game.black_member_id)
+    for watcher_id in await watchers_snapshot(redis, game.id):
+        if watcher_id in (game.white_member_id, game.black_member_id):
+            continue
+        await hub.publish(room.id, state, to_member_id=watcher_id)
+
+
 async def post_system_message(session, settings, hub, room, text: str) -> None:
     """A WhatsApp-style "X joined"/"X left" notice: a real, persisted
     message (kind="system") in the room's general channel, so it shows up
@@ -544,8 +608,13 @@ async def handle_accept_game(session, settings, redis, hub, room, actor, data):
     game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
     game = await games_mod.accept_challenge(session, game, actor)
     state = await games_mod.build_state_event(session, game)
-    await hub.publish(room.id, state, to_member_id=game.white_member_id)
-    await hub.publish(room.id, state, to_member_id=game.black_member_id)
+    await _broadcast_game_state(redis, hub, room, game, state)
+    # Room-wide (no to_member_id) - everyone else gets a lightweight
+    # "live now" banner they can tap to spectate, without being dropped
+    # into the board themselves.
+    white = await session.get(Member, game.white_member_id)
+    black = await session.get(Member, game.black_member_id)
+    await hub.publish(room.id, games_mod.live_event(game, white, black))
     await post_system_message(
         session, settings, hub, room, f"♟️ {state['white_name']} and {state['black_name']} started a game of chess!"
     )
@@ -573,9 +642,9 @@ async def handle_game_move(session, settings, redis, hub, room, actor, data):
     uci = f"{from_sq}{to_sq}{promotion or ''}"
     game = await games_mod.apply_move(session, game, actor, uci)
     state = await games_mod.build_state_event(session, game)
-    await hub.publish(room.id, state, to_member_id=game.white_member_id)
-    await hub.publish(room.id, state, to_member_id=game.black_member_id)
+    await _broadcast_game_state(redis, hub, room, game, state)
     if state["game_over"]:
+        await hub.publish(room.id, {"type": "game_live_ended", "game_id": game.id})
         await post_system_message(session, settings, hub, room, _result_message(state))
 
 
@@ -583,9 +652,25 @@ async def handle_resign_game(session, settings, redis, hub, room, actor, data):
     game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
     game = await games_mod.resign(session, game, actor)
     state = await games_mod.build_state_event(session, game)
-    await hub.publish(room.id, state, to_member_id=game.white_member_id)
-    await hub.publish(room.id, state, to_member_id=game.black_member_id)
+    await _broadcast_game_state(redis, hub, room, game, state)
+    await hub.publish(room.id, {"type": "game_live_ended", "game_id": game.id})
     await post_system_message(session, settings, hub, room, _result_message(state))
+
+
+async def handle_watch_game(session, settings, redis, hub, room, actor, data):
+    game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
+    await _watch_game(redis, hub, settings, room.id, game.id, actor.id)
+    # The watcher needs the current board immediately, not just future
+    # moves - a direct send, same reasoning as the connect-time snapshot.
+    state = await games_mod.build_state_event(session, game)
+    await hub.publish(room.id, state, to_member_id=actor.id)
+
+
+async def handle_unwatch_game(session, settings, redis, hub, room, actor, data):
+    game_id = data.get("game_id")
+    if not game_id:
+        raise DomainError("bad_request", "Missing game_id.")
+    await _unwatch_game(redis, hub, room.id, game_id, actor.id)
 
 
 def _result_message(state: dict) -> str:
@@ -640,6 +725,8 @@ HANDLERS = {
     "cancel_game": handle_cancel_game,
     "game_move": handle_game_move,
     "resign_game": handle_resign_game,
+    "watch_game": handle_watch_game,
+    "unwatch_game": handle_unwatch_game,
 }
 
 

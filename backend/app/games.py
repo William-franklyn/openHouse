@@ -174,6 +174,18 @@ async def resign(session, game: Game, actor: Member) -> Game:
     return game
 
 
+def _was_last_move_a_capture(moves: list[str]) -> bool:
+    """Whether the most recent move captured a piece - used purely for the
+    frontend's sound effect, so it's derived fresh rather than stored
+    (same "replay the log" philosophy as the board itself)."""
+    if not moves:
+        return False
+    board = chess.Board()
+    for uci in moves[:-1]:
+        board.push_uci(uci)
+    return board.is_capture(chess.Move.from_uci(moves[-1]))
+
+
 async def build_state_event(session, game: Game) -> dict:
     board = _board(game)
     white = await session.get(Member, game.white_member_id)
@@ -197,11 +209,87 @@ async def build_state_event(session, game: Game) -> dict:
         "turn": "white" if board.turn == chess.WHITE else "black",
         "legal_moves": [m.uci() for m in board.legal_moves] if game.status == "active" else [],
         "in_check": board.is_check(),
+        "last_move_was_capture": _was_last_move_a_capture(moves),
         "game_over": game.status == "finished",
         "result": game.result,
         "termination": game.termination,
         "last_move": moves[-1] if moves else None,
     }
+
+
+def live_event(game: Game, white: Member, black: Member) -> dict:
+    """The lightweight room-wide "X vs Y is live" announcement - no board
+    state, just enough for a non-players banner. Watching (watch_game)
+    is what actually fetches the full board."""
+    return {
+        "type": "game_live",
+        "game_id": game.id,
+        "kind": game.kind,
+        "white_member_id": game.white_member_id,
+        "white_name": white.display_name,
+        "black_member_id": game.black_member_id,
+        "black_name": black.display_name,
+    }
+
+
+async def live_games_for_room(session, room_id: str, exclude_member_id: str | None = None) -> list[dict]:
+    """Every currently-active game in the room, as live_event dicts - used
+    to populate a newly-connecting client's "live now" banner for games
+    already in progress. Excludes the connecting member's own game(s),
+    since they get the full game_state directly, not a spectator banner."""
+    result = await session.execute(select(Game).where(Game.room_id == room_id, Game.status == "active"))
+    games = result.scalars().all()
+    events = []
+    for game in games:
+        if exclude_member_id in (game.white_member_id, game.black_member_id):
+            continue
+        white = await session.get(Member, game.white_member_id)
+        black = await session.get(Member, game.black_member_id)
+        if white is None or black is None:
+            continue
+        events.append(live_event(game, white, black))
+    return events
+
+
+async def leaderboard(session, room_id: str) -> list[dict]:
+    """Win/loss/draw counts per member, from every finished game in this
+    room - derived on read from the games table, not tracked separately,
+    same "one source of truth" reasoning as the board itself."""
+    result = await session.execute(
+        select(Game).where(Game.room_id == room_id, Game.status == "finished")
+    )
+    games = result.scalars().all()
+
+    stats: dict[str, dict] = {}
+
+    def bump(member_id: str, key: str) -> None:
+        row = stats.setdefault(member_id, {"wins": 0, "losses": 0, "draws": 0})
+        row[key] += 1
+
+    for game in games:
+        if game.result == "draw":
+            bump(game.white_member_id, "draws")
+            bump(game.black_member_id, "draws")
+        elif game.result == "white":
+            bump(game.white_member_id, "wins")
+            bump(game.black_member_id, "losses")
+        else:
+            bump(game.black_member_id, "wins")
+            bump(game.white_member_id, "losses")
+
+    rows = []
+    for member_id, row in stats.items():
+        member = await session.get(Member, member_id)
+        rows.append(
+            {
+                "member_id": member_id,
+                "name": member.display_name if member else "Unknown",
+                **row,
+                "games_played": row["wins"] + row["losses"] + row["draws"],
+            }
+        )
+    rows.sort(key=lambda r: (-r["wins"], -r["draws"], r["losses"]))
+    return rows
 
 
 def invite_event(game: Game, challenger: Member, opponent: Member) -> dict:
