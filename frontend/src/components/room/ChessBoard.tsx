@@ -47,6 +47,17 @@ function squareName(rankIdx: number, fileIdx: number): string {
   return `${file}${rank}`;
 }
 
+/** Center of a square in display (post-flip) grid units, for drawing the
+ * move arrow - same flip transform the render loop applies to pieces,
+ * just run directly off the square name instead of a loop index. */
+function squareCenter(sq: string, flipped: boolean): [number, number] {
+  const fIdx = sq.charCodeAt(0) - 97;
+  const rIdx = 8 - Number(sq[1]);
+  const col = flipped ? 7 - fIdx : fIdx;
+  const row = flipped ? 7 - rIdx : rIdx;
+  return [col + 0.5, row + 0.5];
+}
+
 export function ChessBoard({
   boardFen,
   myColor,
@@ -178,6 +189,8 @@ export function ChessBoard({
         })}
       </div>
 
+      {lastFrom && lastTo && <MoveArrow key={lastMove} from={lastFrom} to={lastTo} flipped={flipped} />}
+
       {promotionPick && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/90">
           <div className="flex gap-2 rounded-[var(--radius-md)] border border-border bg-surface p-3 shadow-[var(--shadow-lg)]">
@@ -196,5 +209,53 @@ export function ChessBoard({
         </div>
       )}
     </div>
+  );
+}
+
+/** A quick, fading arrow pointing from one square to another, so a just-
+ * played move reads instantly to anyone watching - players mid-game and
+ * especially spectators, who otherwise have to work out what happened
+ * from a static before/after board. Keyed by the caller on the move
+ * itself, so a fresh one (and a fresh animation) mounts per move rather
+ * than animating once and then sitting there. */
+function MoveArrow({ from, to, flipped }: { from: string; to: string; flipped: boolean }) {
+  const [x1, y1] = squareCenter(from, flipped);
+  const [x2, y2] = squareCenter(to, flipped);
+
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  // Pull both ends in from the square centers so the line doesn't start
+  // and end buried under the piece glyphs sitting at those centers.
+  const sx = x1 + ux * 0.16;
+  const sy = y1 + uy * 0.16;
+  const ex = x2 - ux * 0.32;
+  const ey = y2 - uy * 0.32;
+
+  return (
+    <svg
+      className="animate-chess-move-arrow pointer-events-none absolute inset-0 h-full w-full"
+      viewBox="0 0 8 8"
+      style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.35))" }}
+      aria-hidden
+    >
+      <defs>
+        <marker id="chess-move-arrowhead" markerWidth="4" markerHeight="4" refX="2.4" refY="2" orient="auto">
+          <path d="M0,0 L4,2 L0,4 Z" style={{ fill: "var(--accent)" }} />
+        </marker>
+      </defs>
+      <line
+        x1={sx}
+        y1={sy}
+        x2={ex}
+        y2={ey}
+        strokeWidth="0.13"
+        strokeLinecap="round"
+        style={{ stroke: "var(--accent)" }}
+        markerEnd="url(#chess-move-arrowhead)"
+      />
+    </svg>
   );
 }
