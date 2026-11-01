@@ -1,6 +1,7 @@
 from app.errors import DomainError
 from app.game_engines.backgammon_engine import BackgammonEngine
 from app.game_engines.base import GameEngine
+from app.game_engines.battleship_engine import BattleshipEngine
 from app.game_engines.checkers_engine import CheckersEngine
 from app.game_engines.chess_engine import ChessEngine
 from app.game_engines.connect4_engine import Connect4Engine
@@ -16,6 +17,7 @@ ENGINES: dict[str, GameEngine] = {
     "reversi": ReversiEngine(),
     "checkers": CheckersEngine(),
     "backgammon": BackgammonEngine(),
+    "battleship": BattleshipEngine(),
 }
 
 

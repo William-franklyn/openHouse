@@ -246,7 +246,16 @@ async def resign(session, game: Game, actor: Member) -> Game:
     return game
 
 
-async def build_state_event(session, game: Game) -> dict:
+async def build_state_event(session, game: Game, viewer_member_id: str | None = None) -> dict:
+    """viewer_member_id is who this particular event is being built for -
+    None (the default) means "no one in particular," which every existing
+    engine treats identically to a player's own view, since every board
+    game so far is fully public to both seats and every spectator. A kind
+    with hidden per-player information (battleship's own ship positions)
+    opts in by implementing an optional redact_for_viewer(display,
+    viewer_seat) on its engine; viewer_seat is resolved to 0/1 for an
+    actual player, or None for anyone else (including no viewer given at
+    all) - None always means "the safe, spectator-visible subset.\""""
     engine = get_engine(game.kind)
     state = _load_state(game, engine)
     moves = json.loads(game.moves_json)
@@ -260,6 +269,11 @@ async def build_state_event(session, game: Game) -> dict:
     # just what the board position happens to allow.
     if game.status != "active" and "legal_moves" in display:
         display["legal_moves"] = []
+
+    redact = getattr(engine, "redact_for_viewer", None)
+    if redact is not None:
+        viewer_seat = _seat_of(game, viewer_member_id) if viewer_member_id is not None else None
+        display = redact(display, viewer_seat)
 
     return {
         "type": "game_state",
@@ -397,4 +411,4 @@ async def connect_snapshot_event(session, room_id: str, member_id: str) -> dict 
         if white is None:
             return None
         return link_waiting_event(game, white)
-    return await build_state_event(session, game)
+    return await build_state_event(session, game, member_id)

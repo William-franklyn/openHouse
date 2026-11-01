@@ -8,6 +8,7 @@ from app.game_engines.base import IllegalMove
 from app.game_engines.connect4_engine import COLS, ROWS, Connect4Engine
 from app.game_engines.backgammon_engine import BackgammonEngine, BAR, OFF
 from app.game_engines.backgammon_engine import _roll as bg_roll
+from app.game_engines.battleship_engine import SHIP_SIZES, BattleshipEngine
 from app.game_engines.checkers_engine import CheckersEngine
 from app.game_engines.dots_and_boxes_engine import ROWS as DAB_ROWS, COLS as DAB_COLS, DotsAndBoxesEngine
 from app.game_engines.reversi_engine import ReversiEngine
@@ -564,3 +565,117 @@ def test_backgammon_bearing_off_all_15_wins():
     assert engine.check_outcome(_bg_state(borne_off=[15, 0])) == ("white", "all_checkers_home")
     assert engine.check_outcome(_bg_state(borne_off=[0, 15])) == ("black", "all_checkers_home")
     assert engine.check_outcome(_bg_state(borne_off=[14, 10])) == (None, None)
+
+
+# ---- Battleship: placement, shots, outcome, and - the whole point -
+# hidden information actually staying hidden from the wrong viewer ----
+
+def _bship_state(white_ship_cell=(1, 1), black_ship_cell=(5, 5)):
+    grids = [
+        [[0 if (r, c) == white_ship_cell else None for c in range(10)] for r in range(10)],
+        [[0 if (r, c) == black_ship_cell else None for c in range(10)] for r in range(10)],
+    ]
+    return {
+        "grids": grids,
+        "ship_hits": [[0] * len(SHIP_SIZES), [0] * len(SHIP_SIZES)],
+        "shots": [[[None] * 10 for _ in range(10)], [[None] * 10 for _ in range(10)]],
+        "next_seat": 0,
+    }
+
+
+def test_battleship_fleet_placement_has_correct_sizes_and_no_overlap():
+    engine = BattleshipEngine()
+    state = engine.initial_state()
+    for seat in (0, 1):
+        counts: dict[int, int] = {}
+        for row in state["grids"][seat]:
+            for cell in row:
+                if cell is not None:
+                    counts[cell] = counts.get(cell, 0) + 1
+        assert sorted(counts.values()) == sorted(SHIP_SIZES)
+        assert sum(counts.values()) == sum(SHIP_SIZES)
+
+
+def test_battleship_shot_on_a_ship_is_a_hit():
+    engine = BattleshipEngine()
+    state = _bship_state(black_ship_cell=(5, 5))
+    new_state = engine.apply_move(state, 0, {"row": 5, "col": 5})
+    assert new_state["shots"][0][5][5] == "hit"
+    assert new_state["ship_hits"][1][0] == 1
+
+
+def test_battleship_shot_on_empty_water_is_a_miss():
+    engine = BattleshipEngine()
+    state = _bship_state(black_ship_cell=(5, 5))
+    new_state = engine.apply_move(state, 0, {"row": 0, "col": 0})
+    assert new_state["shots"][0][0][0] == "miss"
+    assert new_state["ship_hits"][1][0] == 0
+
+
+def test_battleship_firing_at_the_same_cell_twice_is_illegal():
+    engine = BattleshipEngine()
+    state = _bship_state()
+    new_state = engine.apply_move(state, 0, {"row": 5, "col": 5})
+    with pytest.raises(IllegalMove):
+        engine.apply_move(new_state, 0, {"row": 5, "col": 5})
+
+
+def test_battleship_sinking_every_ship_wins_the_game():
+    engine = BattleshipEngine()
+    state = _bship_state()
+    state["ship_hits"][1] = list(SHIP_SIZES)  # pretend black's whole fleet is already hit
+    assert engine.check_outcome(state) == ("white", "fleet_sunk")
+    state2 = _bship_state()
+    state2["ship_hits"][0] = list(SHIP_SIZES)
+    assert engine.check_outcome(state2) == ("black", "fleet_sunk")
+    assert engine.check_outcome(_bship_state()) == (None, None)
+
+
+def test_battleship_own_board_shows_unshot_ships_but_opponent_board_does_not():
+    """The actual point of this engine: redact_for_viewer must never leak
+    a player's own un-hit ship positions to the opponent or to a
+    spectator - only hit/miss markers are visible on a board that isn't
+    yours."""
+    engine = BattleshipEngine()
+    state = _bship_state(white_ship_cell=(1, 1), black_ship_cell=(5, 5))
+    display = engine.build_display_state(state, [])
+
+    white_view = engine.redact_for_viewer(display, 0)
+    assert white_view["white_grid"][1][1] == "ship"  # my own board - full detail
+    assert white_view["black_grid"][5][5] == "unknown"  # opponent's board - nothing revealed yet
+
+    black_view = engine.redact_for_viewer(display, 1)
+    assert black_view["black_grid"][5][5] == "ship"  # my own board
+    assert black_view["white_grid"][1][1] == "unknown"  # the critical check - opponent's hidden ship stays hidden
+
+    spectator_view = engine.redact_for_viewer(display, None)
+    assert spectator_view["white_grid"][1][1] == "unknown"
+    assert spectator_view["black_grid"][5][5] == "unknown"
+
+
+def test_battleship_a_hit_becomes_visible_to_everyone_once_fired():
+    engine = BattleshipEngine()
+    state = _bship_state(white_ship_cell=(1, 1), black_ship_cell=(5, 5))
+    # Black fires at white's ship and hits it.
+    new_state = engine.apply_move(state, 1, {"row": 1, "col": 1})
+    display = engine.build_display_state(new_state, [])
+
+    white_view = engine.redact_for_viewer(display, 0)
+    black_view = engine.redact_for_viewer(display, 1)
+    spectator_view = engine.redact_for_viewer(display, None)
+
+    # Once hit, every viewer sees "hit" at that cell on white's board -
+    # the ship's presence there is no longer a secret, just its
+    # unhit neighbors (if any) still are.
+    assert white_view["white_grid"][1][1] == "hit"
+    assert black_view["white_grid"][1][1] == "hit"
+    assert spectator_view["white_grid"][1][1] == "hit"
+
+
+def test_battleship_legal_moves_excludes_already_fired_cells():
+    engine = BattleshipEngine()
+    state = _bship_state()
+    new_state = engine.apply_move(state, 0, {"row": 2, "col": 3})
+    legal = engine.legal_moves(new_state, 0)
+    assert {"row": 2, "col": 3} not in legal
+    assert len(legal) == 99

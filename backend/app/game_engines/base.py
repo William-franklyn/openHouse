@@ -75,3 +75,25 @@ class GameEngine(Protocol):
         alongside games.py's generic fields. Pure function of state +
         move log - no DB/session access, no game-lifecycle knowledge."""
         ...
+
+    # Deliberately NOT part of this Protocol (every existing engine omits
+    # it entirely, since every board game so far is fully public to both
+    # seats and every spectator). An engine with hidden per-player
+    # information - battleship's own ship positions being the first case
+    # - opts in by implementing:
+    #
+    #   def redact_for_viewer(self, display: dict, viewer_seat: Seat | None) -> dict:
+    #       """Given the full display dict build_display_state produced,
+    #       return the subset `viewer_seat` is actually allowed to see.
+    #       viewer_seat is 0 or 1 for an actual player, None for a
+    #       spectator (or for no particular viewer at all - the safe
+    #       default). Called once per recipient in build_state_event,
+    #       engines without hidden information never need to implement
+    #       this at all - games.py checks hasattr() and skips straight
+    #       through when it's absent."""
+    #
+    # Kept out of the Protocol class itself (rather than given a no-op
+    # default here) so hasattr() stays the one, explicit way to ask "does
+    # this kind actually have anything to hide" - a required method with
+    # a default body would make that question impossible to answer
+    # cheaply without calling it.

@@ -289,10 +289,15 @@ async def cleanup_watchers_on_disconnect(redis, hub, room_id: str, member_id: st
     await redis.delete(_member_watching_key(member_id))
 
 
-async def _broadcast_game_state(redis, hub, settings, room, game, state: dict) -> None:
-    """Players always get it directly; watchers get it too, looked up
-    fresh each time rather than kept in the event - a watcher list can
-    change between moves.
+async def _broadcast_game_state(session, redis, hub, settings, room, game) -> None:
+    """Builds and sends a per-recipient game_state to both players and
+    every watcher, looked up fresh each time rather than kept in the
+    event - a watcher list can change between moves. For almost every
+    kind build_state_event produces the exact same dict regardless of
+    who's asking, so this just costs a few extra cheap, in-memory
+    rebuilds - only a hidden-information kind like battleship actually
+    needs different payloads per recipient (see build_state_event's
+    viewer_member_id and GameEngine.redact_for_viewer).
 
     Every delivery also refreshes that watcher's TTL. The TTL exists only
     as a safety net for a tab that vanished without sending unwatch_game
@@ -300,12 +305,16 @@ async def _broadcast_game_state(redis, hub, settings, room, game, state: dict) -
     this refresh, a real game that runs longer than GAME_WATCH_TTL_SECONDS
     would silently drop every spectator mid-game: they'd stop receiving
     moves with no error, looking "stuck" until they re-watch by hand."""
-    await hub.publish(room.id, state, to_member_id=game.white_member_id)
-    await hub.publish(room.id, state, to_member_id=game.black_member_id)
+    white_state = await games_mod.build_state_event(session, game, game.white_member_id)
+    await hub.publish(room.id, white_state, to_member_id=game.white_member_id)
+    if game.black_member_id is not None:
+        black_state = await games_mod.build_state_event(session, game, game.black_member_id)
+        await hub.publish(room.id, black_state, to_member_id=game.black_member_id)
     for watcher_id in await watchers_snapshot(redis, game.id):
         if watcher_id in (game.white_member_id, game.black_member_id):
             continue
-        await hub.publish(room.id, state, to_member_id=watcher_id)
+        watcher_state = await games_mod.build_state_event(session, game, watcher_id)
+        await hub.publish(room.id, watcher_state, to_member_id=watcher_id)
         await redis.expire(_watchers_key(game.id), settings.GAME_WATCH_TTL_SECONDS)
         await redis.expire(_member_watching_key(watcher_id), settings.GAME_WATCH_TTL_SECONDS)
 
@@ -748,8 +757,7 @@ async def handle_challenge_to_chess(session, settings, redis, hub, room, actor, 
 async def handle_accept_game(session, settings, redis, hub, room, actor, data):
     game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
     game = await games_mod.accept_challenge(session, game, actor)
-    state = await games_mod.build_state_event(session, game)
-    await _broadcast_game_state(redis, hub, settings, room, game, state)
+    await _broadcast_game_state(session, redis, hub, settings, room, game)
     # Room-wide (no to_member_id) - everyone else gets a lightweight
     # "live now" banner they can tap to spectate, without being dropped
     # into the board themselves.
@@ -759,7 +767,7 @@ async def handle_accept_game(session, settings, redis, hub, room, actor, data):
     label = _game_label(game.kind)
     await post_system_message(
         session, settings, hub, room,
-        f"{label['emoji']} {state['white_name']} and {state['black_name']} started a game of {label['name']}!",
+        f"{label['emoji']} {white.display_name} and {black.display_name} started a game of {label['name']}!",
     )
 
 
@@ -795,19 +803,19 @@ async def handle_claim_game_link(session, settings, redis, hub, room, actor, dat
     if game is None:
         raise DomainError("bad_request", "That invite link isn't valid anymore.")
     game, is_fresh = await games_mod.claim_link_challenge(session, room, game, actor)
-    state = await games_mod.build_state_event(session, game)
     if not is_fresh:
         # Re-opening the same link they already used - just resync them
         # into the game, no second "started a game" announcement/broadcast.
+        state = await games_mod.build_state_event(session, game, actor.id)
         await hub.publish(room.id, state, to_member_id=actor.id)
         return
-    await _broadcast_game_state(redis, hub, settings, room, game, state)
+    await _broadcast_game_state(session, redis, hub, settings, room, game)
     white = await session.get(Member, game.white_member_id)
     await hub.publish(room.id, games_mod.live_event(game, white, actor))
     label = _game_label(game.kind)
     await post_system_message(
         session, settings, hub, room,
-        f"{label['emoji']} {state['white_name']} and {state['black_name']} started a game of {label['name']}!",
+        f"{label['emoji']} {white.display_name} and {actor.display_name} started a game of {label['name']}!",
     )
 
 
@@ -819,20 +827,22 @@ async def handle_game_move(session, settings, redis, hub, room, actor, data):
     except (KeyError, ValueError, TypeError):
         raise DomainError("bad_request", "Missing or invalid move.")
     game = await games_mod.apply_move(session, game, actor, move)
-    state = await games_mod.build_state_event(session, game)
-    await _broadcast_game_state(redis, hub, settings, room, game, state)
-    if state["game_over"]:
+    await _broadcast_game_state(session, redis, hub, settings, room, game)
+    if game.status == "finished":
+        white = await session.get(Member, game.white_member_id)
+        black = await session.get(Member, game.black_member_id)
         await hub.publish(room.id, {"type": "game_live_ended", "game_id": game.id})
-        await post_system_message(session, settings, hub, room, _result_message(game.kind, state))
+        await post_system_message(session, settings, hub, room, _result_message(game, white, black))
 
 
 async def handle_resign_game(session, settings, redis, hub, room, actor, data):
     game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
     game = await games_mod.resign(session, game, actor)
-    state = await games_mod.build_state_event(session, game)
-    await _broadcast_game_state(redis, hub, settings, room, game, state)
+    await _broadcast_game_state(session, redis, hub, settings, room, game)
+    white = await session.get(Member, game.white_member_id)
+    black = await session.get(Member, game.black_member_id)
     await hub.publish(room.id, {"type": "game_live_ended", "game_id": game.id})
-    await post_system_message(session, settings, hub, room, _result_message(game.kind, state))
+    await post_system_message(session, settings, hub, room, _result_message(game, white, black))
 
 
 async def handle_watch_game(session, settings, redis, hub, room, actor, data):
@@ -840,7 +850,9 @@ async def handle_watch_game(session, settings, redis, hub, room, actor, data):
     await _watch_game(redis, hub, settings, room.id, game.id, actor.id)
     # The watcher needs the current board immediately, not just future
     # moves - a direct send, same reasoning as the connect-time snapshot.
-    state = await games_mod.build_state_event(session, game)
+    # actor.id won't match either seat, so this naturally resolves to the
+    # spectator-safe view for a hidden-information kind.
+    state = await games_mod.build_state_event(session, game, actor.id)
     await hub.publish(room.id, state, to_member_id=actor.id)
 
 
@@ -862,18 +874,19 @@ def _game_label(kind: str) -> dict[str, str]:
     return GAME_LABELS.get(kind, {"emoji": "🎮", "name": kind})
 
 
-def _result_message(kind: str, state: dict) -> str:
-    label = _game_label(kind)
-    white, black = state["white_name"], state["black_name"]
-    if state["result"] == "draw":
-        return f"{label['emoji']} {white} and {black}'s {label['name']} game ended in a draw ({state['termination'].replace('_', ' ')})."
-    winner = white if state["result"] == "white" else black
-    loser = black if state["result"] == "white" else white
-    if state["termination"] == "resignation":
+def _result_message(game, white: Member, black: Member) -> str:
+    label = _game_label(game.kind)
+    white_name, black_name = white.display_name, black.display_name
+    termination = (game.termination or "").replace("_", " ")
+    if game.result == "draw":
+        return f"{label['emoji']} {white_name} and {black_name}'s {label['name']} game ended in a draw ({termination})."
+    winner = white_name if game.result == "white" else black_name
+    loser = black_name if game.result == "white" else white_name
+    if game.termination == "resignation":
         return f"{label['emoji']} {winner} wins! {loser} resigned."
-    if kind == "chess" and state["termination"] == "checkmate":
+    if game.kind == "chess" and game.termination == "checkmate":
         return f"{label['emoji']} Checkmate! {winner} wins the {label['name']} game."
-    return f"{label['emoji']} {winner} wins the {label['name']} game ({state['termination'].replace('_', ' ')})."
+    return f"{label['emoji']} {winner} wins the {label['name']} game ({termination})."
 
 
 async def handle_leave(session, settings, redis, hub, room, actor, data):
