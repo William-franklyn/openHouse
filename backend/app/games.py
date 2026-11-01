@@ -1,7 +1,8 @@
-"""Games inside a room - chess is the first. A game is an append-only log
-of UCI moves (moves_json), replayed from the standard starting position on
-every read via python-chess - same spirit as messages.py's seq'd log, never
-a separately stored board snapshot that could drift from it.
+"""Games inside a room - chess was the first, now one of several pluggable
+kinds (see app/game_engines/). A game is either an append-only log of moves
+replayed from the start on every read (chess, via python-chess), or a
+directly-persisted state_json snapshot updated in place each move (every
+other kind) - see GameEngine.REPLAY_FROM_LOG in app/game_engines/base.py.
 
 Business logic only, no HTTP/WebSocket awareness - realtime.py's handlers
 call into this, same split as rooms.py/members.py."""
@@ -9,28 +10,31 @@ call into this, same split as rooms.py/members.py."""
 import json
 import secrets
 
-import chess
 from sqlalchemy import or_, select
 
 from app.errors import DomainError
+from app.game_engines import get_engine
+from app.game_engines.base import GameEngine, IllegalMove, SEAT_NAMES
 from app.models import Game, Member, new_id, utcnow
 
-COLOR_NAMES = {chess.WHITE: "white", chess.BLACK: "black"}
 
-
-def _board(game: Game) -> chess.Board:
-    board = chess.Board()
-    for uci in json.loads(game.moves_json):
-        board.push_uci(uci)
-    return board
-
-
-def _color_of(game: Game, member_id: str) -> bool | None:
+def _seat_of(game: Game, member_id: str) -> int | None:
     if member_id == game.white_member_id:
-        return chess.WHITE
+        return 0
     if member_id == game.black_member_id:
-        return chess.BLACK
+        return 1
     return None
+
+
+def _load_state(game: Game, engine: GameEngine):
+    if engine.REPLAY_FROM_LOG:
+        state = engine.initial_state()
+        for seat, raw in enumerate(json.loads(game.moves_json)):
+            state = engine.apply_move(state, seat % 2, engine.decode_move(raw))
+        return state
+    if game.state_json is None:
+        return engine.initial_state()
+    return json.loads(game.state_json)
 
 
 async def get_live_game_for_member(session, room_id: str, member_id: str) -> Game | None:
@@ -50,7 +54,8 @@ async def get_live_game_for_member(session, room_id: str, member_id: str) -> Gam
     return result.scalars().first()
 
 
-async def create_challenge(session, room, challenger: Member, opponent: Member) -> Game:
+async def create_challenge(session, room, challenger: Member, opponent: Member, kind: str = "chess") -> Game:
+    get_engine(kind)  # fail fast on an unknown kind, before touching the DB
     if opponent.id == challenger.id:
         raise DomainError("bad_request", "You can't challenge yourself.")
     if opponent.room_id != room.id or opponent.status != "active":
@@ -63,7 +68,7 @@ async def create_challenge(session, room, challenger: Member, opponent: Member) 
     game = Game(
         id=new_id(),
         room_id=room.id,
-        kind="chess",
+        kind=kind,
         white_member_id=challenger.id,
         black_member_id=opponent.id,
         status="pending",
@@ -76,17 +81,18 @@ async def create_challenge(session, room, challenger: Member, opponent: Member) 
     return game
 
 
-async def create_link_challenge(session, room, challenger: Member) -> Game:
+async def create_link_challenge(session, room, challenger: Member, kind: str = "chess") -> Game:
     """An open seat, not addressed to any specific member yet - for
     inviting someone who isn't in the room (or even online anywhere) by
     sharing a link, rather than picking from who's currently present."""
+    get_engine(kind)  # fail fast on an unknown kind, before touching the DB
     if await get_live_game_for_member(session, room.id, challenger.id) is not None:
         raise DomainError("game_in_progress", "Finish or cancel your current game first.")
 
     game = Game(
         id=new_id(),
         room_id=room.id,
-        kind="chess",
+        kind=kind,
         white_member_id=challenger.id,
         black_member_id=None,
         status="awaiting",
@@ -175,43 +181,31 @@ async def cancel_challenge(session, game: Game, actor: Member) -> Game:
     return game
 
 
-def _outcome(board: chess.Board) -> tuple[str | None, str | None]:
-    """(result, termination). result is "white"/"black"/"draw", or None if
-    the game is still going."""
-    if not board.is_game_over():
-        return None, None
-    outcome = board.outcome()
-    if outcome is None:
-        return None, None
-    result = "draw" if outcome.winner is None else COLOR_NAMES[outcome.winner]
-    return result, outcome.termination.name.lower()
-
-
-async def apply_move(session, game: Game, actor: Member, uci: str) -> Game:
+async def apply_move(session, game: Game, actor: Member, move: dict) -> Game:
     if game.status != "active":
         raise DomainError("bad_request", "This game isn't active.")
-    color = _color_of(game, actor.id)
-    if color is None:
+    seat = _seat_of(game, actor.id)
+    if seat is None:
         raise DomainError("not_allowed", "You're not a player in this game.")
 
-    board = _board(game)
-    if board.turn != color:
+    engine = get_engine(game.kind)
+    state = _load_state(game, engine)
+    if engine.current_turn(state) != seat:
         raise DomainError("not_your_turn", "It's not your turn.")
 
     try:
-        move = chess.Move.from_uci(uci)
-    except ValueError:
-        raise DomainError("illegal_move", "That's not a legal move.")
-    if move not in board.legal_moves:
-        raise DomainError("illegal_move", "That's not a legal move.")
+        new_state = engine.apply_move(state, seat, move)
+    except IllegalMove as exc:
+        raise DomainError("illegal_move", str(exc) or "That's not a legal move.")
 
-    board.push(move)
     moves = json.loads(game.moves_json)
-    moves.append(move.uci())
+    moves.append(engine.encode_move(move))
     game.moves_json = json.dumps(moves)
+    if not engine.REPLAY_FROM_LOG:
+        game.state_json = json.dumps(new_state)
     game.updated_at = utcnow()
 
-    result, termination = _outcome(board)
+    result, termination = engine.check_outcome(new_state)
     if result is not None:
         game.status = "finished"
         game.result = result
@@ -224,35 +218,33 @@ async def apply_move(session, game: Game, actor: Member, uci: str) -> Game:
 async def resign(session, game: Game, actor: Member) -> Game:
     if game.status != "active":
         raise DomainError("bad_request", "This game isn't active.")
-    color = _color_of(game, actor.id)
-    if color is None:
+    seat = _seat_of(game, actor.id)
+    if seat is None:
         raise DomainError("not_allowed", "You're not a player in this game.")
 
     game.status = "finished"
-    game.result = COLOR_NAMES[not color]
+    game.result = SEAT_NAMES[1 - seat]
     game.termination = "resignation"
     game.updated_at = utcnow()
     await session.commit()
     return game
 
 
-def _was_last_move_a_capture(moves: list[str]) -> bool:
-    """Whether the most recent move captured a piece - used purely for the
-    frontend's sound effect, so it's derived fresh rather than stored
-    (same "replay the log" philosophy as the board itself)."""
-    if not moves:
-        return False
-    board = chess.Board()
-    for uci in moves[:-1]:
-        board.push_uci(uci)
-    return board.is_capture(chess.Move.from_uci(moves[-1]))
-
-
 async def build_state_event(session, game: Game) -> dict:
-    board = _board(game)
+    engine = get_engine(game.kind)
+    state = _load_state(game, engine)
+    moves = json.loads(game.moves_json)
     white = await session.get(Member, game.white_member_id)
     black = await session.get(Member, game.black_member_id)
-    moves = json.loads(game.moves_json)
+
+    display = engine.build_display_state(state, moves)
+    # Resignation (or any future non-engine-driven ending) finishes the
+    # Game row without the engine's own state ever reflecting "over" - any
+    # legal_moves hint must follow the game's actual lifecycle status, not
+    # just what the board position happens to allow.
+    if game.status != "active" and "legal_moves" in display:
+        display["legal_moves"] = []
+
     return {
         "type": "game_state",
         "game_id": game.id,
@@ -263,19 +255,12 @@ async def build_state_event(session, game: Game) -> dict:
         "black_member_id": game.black_member_id,
         "black_name": black.display_name if black else "Unknown",
         "moves": moves,
-        # The piece placement field of FEN ("rnbqkbnr/pppppppp/8/.../RNBQKBNR")
-        # - lets the client render the board from pure serialization, with
-        # no chess rules of its own (it never needs to know how a knight
-        # moves, just where the pieces currently are).
-        "board_fen": board.board_fen(),
-        "turn": "white" if board.turn == chess.WHITE else "black",
-        "legal_moves": [m.uci() for m in board.legal_moves] if game.status == "active" else [],
-        "in_check": board.is_check(),
-        "last_move_was_capture": _was_last_move_a_capture(moves),
+        "turn": SEAT_NAMES[engine.current_turn(state)],
         "game_over": game.status == "finished",
         "result": game.result,
         "termination": game.termination,
         "last_move": moves[-1] if moves else None,
+        **display,
     }
 
 

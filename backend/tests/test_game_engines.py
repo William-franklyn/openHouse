@@ -1,0 +1,168 @@
+"""Pure unit tests directly against the game engines - no DB, no WebSocket,
+no fakeredis. Fast, isolated coverage of the actual board logic, separate
+from the realtime-plumbing tests in test_tictactoe.py/test_connect4.py."""
+
+import pytest
+
+from app.game_engines.base import IllegalMove
+from app.game_engines.connect4_engine import COLS, ROWS, Connect4Engine
+from app.game_engines.tictactoe_engine import WIN_LINES, TicTacToeEngine
+
+
+# ---- Tic-Tac-Toe: all 8 win lines ----
+
+@pytest.mark.parametrize("line", WIN_LINES)
+def test_tictactoe_every_win_line_is_detected(line):
+    engine = TicTacToeEngine()
+    state = engine.initial_state()
+    a, b, c = line
+    other_cells = [i for i in range(9) if i not in line]
+
+    # X takes the line, O takes two unrelated cells in between - X should
+    # not win until the 3rd (last) cell of the line is placed.
+    state = engine.apply_move(state, 0, {"cell": a})
+    assert engine.check_outcome(state) == (None, None)
+    state = engine.apply_move(state, 1, {"cell": other_cells[0]})
+    state = engine.apply_move(state, 0, {"cell": b})
+    assert engine.check_outcome(state) == (None, None)
+    state = engine.apply_move(state, 1, {"cell": other_cells[1]})
+    state = engine.apply_move(state, 0, {"cell": c})
+
+    assert engine.check_outcome(state) == ("white", "three_in_a_row")
+
+
+def test_tictactoe_occupied_cell_raises_illegal_move():
+    engine = TicTacToeEngine()
+    state = engine.apply_move(engine.initial_state(), 0, {"cell": 4})
+    with pytest.raises(IllegalMove):
+        engine.apply_move(state, 1, {"cell": 4})
+
+
+def test_tictactoe_full_board_no_winner_is_a_draw():
+    engine = TicTacToeEngine()
+    state = engine.initial_state()
+    # X O X / X O O / O X X - no line for either side.
+    seats_and_cells = [(0, 0), (1, 1), (0, 2), (1, 4), (0, 3), (1, 5), (0, 7), (1, 6), (0, 8)]
+    for seat, cell in seats_and_cells:
+        state = engine.apply_move(state, seat, {"cell": cell})
+    assert engine.check_outcome(state) == ("draw", "board_full")
+
+
+def test_tictactoe_legal_moves_is_none():
+    engine = TicTacToeEngine()
+    assert engine.legal_moves(engine.initial_state(), 0) is None
+
+
+def test_tictactoe_current_turn_alternates():
+    engine = TicTacToeEngine()
+    state = engine.initial_state()
+    assert engine.current_turn(state) == 0
+    state = engine.apply_move(state, 0, {"cell": 0})
+    assert engine.current_turn(state) == 1
+
+
+# ---- Connect Four: all 4 directions + column-full boundary ----
+
+def _drop_sequence(engine, moves):
+    state = engine.initial_state()
+    for seat, column in moves:
+        state = engine.apply_move(state, seat, {"column": column})
+    return state
+
+
+def test_connect4_vertical_win():
+    engine = Connect4Engine()
+    moves = [(0, 0), (1, 1), (0, 0), (1, 1), (0, 0), (1, 1), (0, 0)]
+    state = _drop_sequence(engine, moves)
+    assert engine.check_outcome(state) == ("white", "four_in_a_row")
+
+
+def test_connect4_horizontal_win():
+    engine = Connect4Engine()
+    moves = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2), (0, 3)]
+    state = _drop_sequence(engine, moves)
+    assert engine.check_outcome(state) == ("white", "four_in_a_row")
+
+
+def test_connect4_diagonal_up_right_win():
+    engine = Connect4Engine()
+    moves = [
+        (0, 0),
+        (1, 1),
+        (0, 1),
+        (1, 2),
+        (0, 6),
+        (1, 2),
+        (0, 2),
+        (1, 3),
+        (0, 6),
+        (1, 3),
+        (0, 6),
+        (1, 3),
+        (0, 3),
+    ]
+    state = _drop_sequence(engine, moves)
+    assert engine.check_outcome(state) == ("white", "four_in_a_row")
+
+
+def test_connect4_diagonal_up_left_win():
+    """Mirror image of the up-right diagonal - descending from col3 to col0."""
+    engine = Connect4Engine()
+    moves = [
+        (0, 3),
+        (1, 2),
+        (0, 2),
+        (1, 1),
+        (0, 6),
+        (1, 1),
+        (0, 1),
+        (1, 0),
+        (0, 6),
+        (1, 0),
+        (0, 6),
+        (1, 0),
+        (0, 0),
+    ]
+    state = _drop_sequence(engine, moves)
+    assert engine.check_outcome(state) == ("white", "four_in_a_row")
+
+
+def test_connect4_full_column_raises_illegal_move():
+    engine = Connect4Engine()
+    state = engine.initial_state()
+    for i in range(ROWS):
+        state = engine.apply_move(state, i % 2, {"column": 0})
+    with pytest.raises(IllegalMove):
+        engine.apply_move(state, (ROWS) % 2, {"column": 0})
+
+
+def test_connect4_legal_moves_excludes_full_columns():
+    engine = Connect4Engine()
+    state = engine.initial_state()
+    for i in range(ROWS):
+        state = engine.apply_move(state, i % 2, {"column": 0})
+    legal = engine.legal_moves(state, 0)
+    assert {"column": 0} not in legal
+    assert len(legal) == COLS - 1
+
+
+def test_connect4_full_board_no_winner_is_a_draw():
+    """check_outcome is a pure function of state, not of how that state
+    was reached - this board was generated by random search and verified
+    (via this engine's own _winner()) to contain zero 4-in-a-rows in any
+    direction before being hardcoded here, rather than hand-traced, which
+    is error-prone across a 6x7 grid x 4 directions."""
+    engine = Connect4Engine()
+    board = [
+        [0, 0, 1, 1, 0, 1, 1],
+        [0, 0, 0, 1, 0, 0, 1],
+        [0, 1, 0, 0, 1, 1, 1],
+        [1, 1, 0, 1, 1, 0, 0],
+        [0, 1, 1, 0, 1, 1, 1],
+        [0, 0, 0, 1, 0, 1, 0],
+    ]
+    assert len(board) == ROWS and all(len(row) == COLS for row in board)
+    state = {"board": board, "next_seat": 0}
+    result, termination = engine.check_outcome(state)
+    assert result == "draw"
+    assert termination == "board_full"

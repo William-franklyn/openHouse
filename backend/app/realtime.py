@@ -726,15 +726,23 @@ async def handle_call_ice_candidate(session, settings, redis, hub, room, actor, 
 # games.get_live_game_for_member) - keeps the frontend's state to a single
 # myGameId slot, same shape as myCallId, instead of a list.
 
-async def handle_challenge_to_chess(session, settings, redis, hub, room, actor, data):
+async def handle_challenge_game(session, settings, redis, hub, room, actor, data):
+    kind = data.get("kind", "chess")
     opponent = await _get_target_member(session, room.id, data.get("opponent_id"))
-    game = await games_mod.create_challenge(session, room, actor, opponent)
+    game = await games_mod.create_challenge(session, room, actor, opponent, kind=kind)
     invite = games_mod.invite_event(game, actor, opponent)
     # Sent to both - the challenger needs the same event to learn the new
     # game_id and show a "waiting for a reply" state, same pattern as
     # handle_start_call echoing call_invite back to its own host.
     await hub.publish(room.id, invite, to_member_id=opponent.id)
     await hub.publish(room.id, invite, to_member_id=actor.id)
+
+
+async def handle_challenge_to_chess(session, settings, redis, hub, room, actor, data):
+    """Legacy alias - keeps the old wire message name (and every
+    test_chess.py call site) working verbatim. New frontend code for every
+    kind, chess included, sends challenge_game with an explicit kind."""
+    await handle_challenge_game(session, settings, redis, hub, room, actor, {**data, "kind": "chess"})
 
 
 async def handle_accept_game(session, settings, redis, hub, room, actor, data):
@@ -748,8 +756,10 @@ async def handle_accept_game(session, settings, redis, hub, room, actor, data):
     white = await session.get(Member, game.white_member_id)
     black = await session.get(Member, game.black_member_id)
     await hub.publish(room.id, games_mod.live_event(game, white, black))
+    label = _game_label(game.kind)
     await post_system_message(
-        session, settings, hub, room, f"♟️ {state['white_name']} and {state['black_name']} started a game of chess!"
+        session, settings, hub, room,
+        f"{label['emoji']} {state['white_name']} and {state['black_name']} started a game of {label['name']}!",
     )
 
 
@@ -772,7 +782,8 @@ async def handle_cancel_game(session, settings, redis, hub, room, actor, data):
 
 
 async def handle_create_game_link(session, settings, redis, hub, room, actor, data):
-    game = await games_mod.create_link_challenge(session, room, actor)
+    kind = data.get("kind", "chess")
+    game = await games_mod.create_link_challenge(session, room, actor, kind=kind)
     await hub.publish(room.id, games_mod.link_waiting_event(game, actor), to_member_id=actor.id)
 
 
@@ -793,23 +804,26 @@ async def handle_claim_game_link(session, settings, redis, hub, room, actor, dat
     await _broadcast_game_state(redis, hub, settings, room, game, state)
     white = await session.get(Member, game.white_member_id)
     await hub.publish(room.id, games_mod.live_event(game, white, actor))
+    label = _game_label(game.kind)
     await post_system_message(
-        session, settings, hub, room, f"♟️ {state['white_name']} and {state['black_name']} started a game of chess!"
+        session, settings, hub, room,
+        f"{label['emoji']} {state['white_name']} and {state['black_name']} started a game of {label['name']}!",
     )
 
 
 async def handle_game_move(session, settings, redis, hub, room, actor, data):
     game = await games_mod.get_game_or_404(session, room.id, data.get("game_id"))
-    from_sq, to_sq, promotion = data.get("from"), data.get("to"), data.get("promotion")
-    if not from_sq or not to_sq:
-        raise DomainError("bad_request", "Missing from/to.")
-    uci = f"{from_sq}{to_sq}{promotion or ''}"
-    game = await games_mod.apply_move(session, game, actor, uci)
+    engine = games_mod.get_engine(game.kind)
+    try:
+        move = engine.parse_move(data)
+    except (KeyError, ValueError, TypeError):
+        raise DomainError("bad_request", "Missing or invalid move.")
+    game = await games_mod.apply_move(session, game, actor, move)
     state = await games_mod.build_state_event(session, game)
     await _broadcast_game_state(redis, hub, settings, room, game, state)
     if state["game_over"]:
         await hub.publish(room.id, {"type": "game_live_ended", "game_id": game.id})
-        await post_system_message(session, settings, hub, room, _result_message(state))
+        await post_system_message(session, settings, hub, room, _result_message(game.kind, state))
 
 
 async def handle_resign_game(session, settings, redis, hub, room, actor, data):
@@ -818,7 +832,7 @@ async def handle_resign_game(session, settings, redis, hub, room, actor, data):
     state = await games_mod.build_state_event(session, game)
     await _broadcast_game_state(redis, hub, settings, room, game, state)
     await hub.publish(room.id, {"type": "game_live_ended", "game_id": game.id})
-    await post_system_message(session, settings, hub, room, _result_message(state))
+    await post_system_message(session, settings, hub, room, _result_message(game.kind, state))
 
 
 async def handle_watch_game(session, settings, redis, hub, room, actor, data):
@@ -837,17 +851,29 @@ async def handle_unwatch_game(session, settings, redis, hub, room, actor, data):
     await _unwatch_game(redis, hub, room.id, game_id, actor.id)
 
 
-def _result_message(state: dict) -> str:
+GAME_LABELS: dict[str, dict[str, str]] = {
+    "chess": {"emoji": "♟️", "name": "chess"},
+    "tictactoe": {"emoji": "⭕", "name": "tic-tac-toe"},
+    "connect4": {"emoji": "🔴", "name": "Connect Four"},
+}
+
+
+def _game_label(kind: str) -> dict[str, str]:
+    return GAME_LABELS.get(kind, {"emoji": "🎮", "name": kind})
+
+
+def _result_message(kind: str, state: dict) -> str:
+    label = _game_label(kind)
     white, black = state["white_name"], state["black_name"]
     if state["result"] == "draw":
-        return f"♟️ {white} and {black}'s chess game ended in a draw ({state['termination'].replace('_', ' ')})."
+        return f"{label['emoji']} {white} and {black}'s {label['name']} game ended in a draw ({state['termination'].replace('_', ' ')})."
     winner = white if state["result"] == "white" else black
     loser = black if state["result"] == "white" else white
     if state["termination"] == "resignation":
-        return f"♟️ {winner} wins! {loser} resigned."
-    if state["termination"] == "checkmate":
-        return f"♟️ Checkmate! {winner} wins the chess game."
-    return f"♟️ {winner} wins the chess game ({state['termination'].replace('_', ' ')})."
+        return f"{label['emoji']} {winner} wins! {loser} resigned."
+    if kind == "chess" and state["termination"] == "checkmate":
+        return f"{label['emoji']} Checkmate! {winner} wins the {label['name']} game."
+    return f"{label['emoji']} {winner} wins the {label['name']} game ({state['termination'].replace('_', ' ')})."
 
 
 async def handle_leave(session, settings, redis, hub, room, actor, data):
@@ -886,6 +912,7 @@ HANDLERS = {
     "call_answer": handle_call_answer,
     "call_ice_candidate": handle_call_ice_candidate,
     "challenge_to_chess": handle_challenge_to_chess,
+    "challenge_game": handle_challenge_game,
     "accept_game": handle_accept_game,
     "decline_game": handle_decline_game,
     "cancel_game": handle_cancel_game,

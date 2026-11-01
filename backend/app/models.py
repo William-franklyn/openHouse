@@ -210,6 +210,11 @@ class Game(Base):
     # Set only for "awaiting" link-challenges - whoever has this token
     # (room-scoped, see games.get_game_by_token) claims the open seat.
     link_token: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # Authoritative board snapshot for any kind whose engine has
+    # REPLAY_FROM_LOG = False. Always NULL for chess (see
+    # app/game_engines/base.py) - chess rebuilds its state by replaying
+    # moves_json instead.
+    state_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 
