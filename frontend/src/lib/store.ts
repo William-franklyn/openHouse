@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import {
+  BattleshipCell,
   CallSignalEvent,
   ChannelOut,
   GameKind,
@@ -88,6 +89,14 @@ export interface BackgammonGameState extends GameStateBase {
   legalMoves: { from: number; to: number }[];
 }
 
+export interface BattleshipGameState extends GameStateBase {
+  kind: "battleship";
+  whiteGrid: BattleshipCell[][];
+  blackGrid: BattleshipCell[][];
+  shipHits: [number[], number[]];
+  shipSizes: number[];
+}
+
 export type GameState =
   | ChessGameState
   | TicTacToeGameState
@@ -95,7 +104,8 @@ export type GameState =
   | DotsAndBoxesGameState
   | ReversiGameState
   | CheckersGameState
-  | BackgammonGameState;
+  | BackgammonGameState
+  | BattleshipGameState;
 
 // A room-wide "live now" banner entry - lighter than GameState (no board),
 // for games this member isn't playing in. Clicking one sends watch_game,

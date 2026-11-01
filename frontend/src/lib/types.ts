@@ -343,7 +343,8 @@ export type GameKind =
   | "dots_and_boxes"
   | "reversi"
   | "checkers"
-  | "backgammon";
+  | "backgammon"
+  | "battleship";
 export type GameStatus = "pending" | "awaiting" | "active" | "finished";
 export type GameResult = "white" | "black" | "draw";
 
@@ -443,6 +444,21 @@ export interface WSBackgammonState extends WSGameStateBase {
   legal_moves: { from: number; to: number }[];
 }
 
+// A single cell's visible value - "ship"/"empty" only ever appear on a
+// viewer's own grid; the opponent's grid only ever shows hit/miss/unknown,
+// regardless of what's actually underneath an unshot cell (see the
+// backend's redact_for_viewer - this is the one game kind with real
+// hidden per-player information).
+export type BattleshipCell = "ship" | "hit" | "miss" | "empty" | "unknown";
+
+export interface WSBattleshipState extends WSGameStateBase {
+  kind: "battleship";
+  white_grid: BattleshipCell[][];
+  black_grid: BattleshipCell[][];
+  ship_hits: [number[], number[]];
+  ship_sizes: number[];
+}
+
 export type WSGameState =
   | WSChessState
   | WSTicTacToeState
@@ -450,7 +466,8 @@ export type WSGameState =
   | WSDotsAndBoxesState
   | WSReversiState
   | WSCheckersState
-  | WSBackgammonState;
+  | WSBackgammonState
+  | WSBattleshipState;
 
 // A lightweight room-wide "X vs Y is live" announcement - no board state,
 // just enough for a non-player's banner. watch_game is what actually

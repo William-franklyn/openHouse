@@ -1,4 +1,4 @@
-import { Circle, ChessKnight, Grid3x3, Hash, LucideIcon, Square, Dice5 } from "lucide-react";
+import { Circle, ChessKnight, Grid3x3, Hash, LucideIcon, Square, Dice5, Ship } from "lucide-react";
 import { GameKind } from "./types";
 import { GameState } from "./store";
 import { ChessBoardAdapter } from "@/components/room/ChessBoardAdapter";
@@ -8,6 +8,7 @@ import { DotsAndBoxesBoard } from "@/components/room/DotsAndBoxesBoard";
 import { ReversiBoard } from "@/components/room/ReversiBoard";
 import { CheckersBoard } from "@/components/room/CheckersBoard";
 import { BackgammonBoard } from "@/components/room/BackgammonBoard";
+import { BattleshipBoard } from "@/components/room/BattleshipBoard";
 
 export interface GameBoardProps<K extends GameState["kind"] = GameState["kind"]> {
   game: Extract<GameState, { kind: K }>;
@@ -96,5 +97,14 @@ export const GAME_REGISTRY: Record<GameKind, GameRegistryEntry> = {
     emoji: "🎲",
     inviteVerb: "play backgammon",
     Board: BackgammonBoard,
+  },
+  battleship: {
+    kind: "battleship",
+    label: "Battleship",
+    icon: Ship,
+    arenaTitle: "BATTLESHIP ARENA",
+    emoji: "🚢",
+    inviteVerb: "play Battleship",
+    Board: BattleshipBoard,
   },
 };

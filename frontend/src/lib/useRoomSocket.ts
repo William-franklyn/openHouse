@@ -222,7 +222,7 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             mustContinueFrom: event.must_continue_from,
             legalMoves: event.legal_moves,
           };
-        } else {
+        } else if (event.kind === "backgammon") {
           gameState = {
             ...base,
             kind: "backgammon",
@@ -232,6 +232,15 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             dice: event.dice,
             remainingDice: event.remaining_dice,
             legalMoves: event.legal_moves,
+          };
+        } else {
+          gameState = {
+            ...base,
+            kind: "battleship",
+            whiteGrid: event.white_grid,
+            blackGrid: event.black_grid,
+            shipHits: event.ship_hits,
+            shipSizes: event.ship_sizes,
           };
         }
         const amPlayer =
