@@ -8,8 +8,14 @@ import {
   GameStatus,
   MemberRole,
   MessageOut,
+  PartyGameKind,
+  PartyGameStatus,
+  PartyRoundPhase,
+  PartyScoreRow,
   PresenceMember,
   RoomPhoto,
+  TriviaQuestionPublic,
+  TriviaQuestionRevealed,
 } from "./types";
 
 export interface IncomingCallInvite {
@@ -119,6 +125,30 @@ export interface LiveGame {
   blackName: string;
 }
 
+// Party games (trivia, the first) - N arbitrary participants, not 2
+// seats, so this is a genuinely separate state shape from GameState, not
+// another member of its union. One live party game per ROOM at a time
+// (not per-member like board games), so a single nullable slot is enough
+// - no Record<id, ...> the way callPresenceByCallId needs for calls.
+export interface PartyGameState {
+  partyGameId: string;
+  kind: PartyGameKind;
+  status: PartyGameStatus;
+  hostMemberId: string;
+  roundIndex: number;
+  totalRounds: number;
+  participantIds: string[];
+  scoreboard: PartyScoreRow[];
+  phase: PartyRoundPhase;
+  question: TriviaQuestionPublic | TriviaQuestionRevealed | null;
+  roundStartedAtMs: number | null;
+  roundDeadlineMs: number | null;
+  answeredMemberIds: string[];
+  myAnswer: { choiceIndex: number } | null;
+  answers: Record<string, { choiceIndex: number; answeredAtMs: number }> | null;
+  roundPointsAwarded: Record<string, number> | null;
+}
+
 export type ConnectionStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
 export interface RoomMusicState {
@@ -217,6 +247,11 @@ interface RoomStoreState {
   // invite to someone already present, not a shareable link).
   linkWaitingGame: { gameId: string; kind: GameKind; linkToken: string } | null;
 
+  // The one live party game in this room, if any - null means no party
+  // game overlay should show. Room-wide, not per-member (unlike
+  // myGameId): everyone in the room sees the same slot.
+  myPartyGame: PartyGameState | null;
+
   initRoom: (params: {
     roomId: string;
     memberId: string;
@@ -261,6 +296,7 @@ interface RoomStoreState {
   setWatchingGameId: (gameId: string | null) => void;
   setWatchedGame: (game: GameState | null) => void;
   setLinkWaitingGame: (game: { gameId: string; kind: GameKind; linkToken: string } | null) => void;
+  setPartyGame: (game: PartyGameState | null) => void;
   reset: () => void;
 }
 
@@ -298,6 +334,7 @@ const initialState = {
   watchedGame: null as GameState | null,
   watcherCounts: {} as Record<string, number>,
   linkWaitingGame: null as { gameId: string; kind: GameKind; linkToken: string } | null,
+  myPartyGame: null as PartyGameState | null,
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
@@ -454,6 +491,8 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
   setWatchedGame: (game) => set({ watchedGame: game }),
 
   setLinkWaitingGame: (game) => set({ linkWaitingGame: game }),
+
+  setPartyGame: (game) => set({ myPartyGame: game }),
 
   reset: () => set(initialState),
 }));

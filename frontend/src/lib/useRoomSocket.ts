@@ -287,6 +287,64 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
       case "game_watchers":
         store.setWatcherCount(event.game_id, event.count);
         break;
+      case "party_state": {
+        const base = {
+          partyGameId: event.party_game_id,
+          kind: event.kind,
+          status: event.status,
+          hostMemberId: event.host_member_id,
+          roundIndex: event.round_index,
+          totalRounds: event.total_rounds,
+          participantIds: event.participant_ids,
+          scoreboard: event.scoreboard,
+          phase: event.phase,
+        };
+        if (event.phase === "question") {
+          store.setPartyGame({
+            ...base,
+            question: event.question,
+            roundStartedAtMs: event.round_started_at_ms,
+            roundDeadlineMs: event.round_deadline_ms,
+            answeredMemberIds: event.answered_member_ids,
+            myAnswer: event.my_answer ? { choiceIndex: event.my_answer.choice_index } : null,
+            answers: null,
+            roundPointsAwarded: null,
+          });
+        } else if (event.phase === "reveal") {
+          store.setPartyGame({
+            ...base,
+            question: event.question,
+            roundStartedAtMs: null,
+            roundDeadlineMs: null,
+            answeredMemberIds: [],
+            myAnswer: null,
+            answers: Object.fromEntries(
+              Object.entries(event.answers).map(([id, a]) => [
+                id,
+                { choiceIndex: a.choice_index, answeredAtMs: a.answered_at_ms },
+              ])
+            ),
+            roundPointsAwarded: event.round_points_awarded,
+          });
+        } else {
+          store.setPartyGame({
+            ...base,
+            question: null,
+            roundStartedAtMs: null,
+            roundDeadlineMs: null,
+            answeredMemberIds: [],
+            myAnswer: null,
+            answers: null,
+            roundPointsAwarded: null,
+          });
+        }
+        break;
+      }
+      case "party_cancelled":
+        if (store.myPartyGame?.partyGameId === event.party_game_id) {
+          store.setPartyGame(null);
+        }
+        break;
       case "photo_shared":
         store.addPhoto({
           file_id: event.file_id,

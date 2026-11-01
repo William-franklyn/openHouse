@@ -506,6 +506,75 @@ export interface LeaderboardResponse {
   rows: LeaderboardRow[];
 }
 
+// ---- Party games: trivia is the first. N arbitrary room participants in
+// a host-started lobby, not the 2-seat board-game model above - a
+// genuinely separate type, not a GameKind. One live party game per room
+// at a time (enforced server-side). ----
+
+export type PartyGameKind = "trivia";
+export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
+export type PartyRoundPhase = "lobby" | "question" | "reveal";
+
+export interface PartyScoreRow {
+  member_id: string;
+  name: string;
+  score: number;
+  round_points: number | null;
+  answered: boolean;
+}
+
+export interface TriviaQuestionPublic {
+  id: string;
+  category: string;
+  question: string;
+  choices: string[];
+}
+
+export interface TriviaQuestionRevealed extends TriviaQuestionPublic {
+  correct_index: number;
+}
+
+interface WSPartyStateBase {
+  type: "party_state";
+  party_game_id: string;
+  kind: PartyGameKind;
+  status: PartyGameStatus;
+  host_member_id: string;
+  round_index: number;
+  total_rounds: number;
+  participant_ids: string[];
+  scoreboard: PartyScoreRow[];
+  phase: PartyRoundPhase;
+}
+
+export interface WSPartyLobbyState extends WSPartyStateBase {
+  phase: "lobby";
+  question: null;
+}
+
+export interface WSPartyQuestionState extends WSPartyStateBase {
+  phase: "question";
+  question: TriviaQuestionPublic;
+  round_started_at_ms: number;
+  round_deadline_ms: number;
+  answered_member_ids: string[];
+  my_answer: { choice_index: number } | null;
+}
+
+export interface WSPartyRevealState extends WSPartyStateBase {
+  phase: "reveal";
+  question: TriviaQuestionRevealed;
+  answers: Record<string, { choice_index: number; answered_at_ms: number }>;
+  round_points_awarded: Record<string, number>;
+}
+
+export type WSPartyState = WSPartyLobbyState | WSPartyQuestionState | WSPartyRevealState;
+
+export interface WSPartyCancelled {
+  type: "party_cancelled";
+  party_game_id: string;
+}
+
 export type WSServerEvent =
   | WSReady
   | WSMessage
@@ -539,7 +608,9 @@ export type WSServerEvent =
   | WSGameLive
   | WSGameLiveEnded
   | WSGameWatchers
-  | WSGameLinkWaiting;
+  | WSGameLinkWaiting
+  | WSPartyState
+  | WSPartyCancelled;
 
 export class ApiError extends Error {
   code: string;
