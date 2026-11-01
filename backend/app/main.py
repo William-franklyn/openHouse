@@ -19,6 +19,7 @@ from app import members as members_mod
 from app import messages as messages_mod
 from app import metrics as metrics_mod
 from app import music_library
+from app import party_games as party_games_mod
 from app import realtime
 from app import rooms as rooms_mod
 from app import safety
@@ -43,7 +44,7 @@ def create_app(
     db = Database(settings.DATABASE_URL)
     redis_client = redis_client or redis_asyncio.from_url(settings.REDIS_URL)
     storage = storage or Storage(settings)
-    hub = Hub(redis_client)
+    hub = Hub(redis_client, db)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -691,6 +692,10 @@ def register_routes(app: FastAPI) -> None:
                 for live in await games_mod.live_games_for_room(session, room_id, exclude_member_id=member_id):
                     await websocket.send_json(live)
 
+                party_event = await party_games_mod.connect_snapshot_event(session, room_id, member_id)
+                if party_event is not None:
+                    await websocket.send_json(party_event)
+
                 while True:
                     raw = await _receive_json(websocket)
                     if raw is None:
@@ -722,6 +727,10 @@ def register_routes(app: FastAPI) -> None:
                         pass
                     try:
                         await realtime.cleanup_watchers_on_disconnect(redis_client, hub, room_id, member_id)
+                    except Exception:
+                        pass
+                    try:
+                        await realtime.cleanup_party_lobby_on_disconnect(session, settings, hub, room_id, member_id)
                     except Exception:
                         pass
 

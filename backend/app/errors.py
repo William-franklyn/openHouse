@@ -23,6 +23,7 @@ HTTP_STATUS_BY_CODE = {
     "game_in_progress": 409,
     "not_your_turn": 403,
     "illegal_move": 400,
+    "illegal_action": 400,
 }
 
 

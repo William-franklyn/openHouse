@@ -21,9 +21,10 @@ from app import games as games_mod
 from app import members as members_mod
 from app import messages as messages_mod
 from app import music_library
+from app import party_games as party_games_mod
 from app import rooms as rooms_mod
 from app.errors import DomainError
-from app.models import Channel, Member, Message, new_id
+from app.models import Channel, Member, Message, PartyGame, Room, new_id
 
 
 async def _close_quietly(ws):
@@ -36,20 +37,62 @@ async def _close_quietly(ws):
 class Hub:
     CHANNEL = "openhouse:events"
 
-    def __init__(self, redis):
+    def __init__(self, redis, db=None):
         self.redis = redis
+        # Lets a fired party-round timer open its own fresh DB session -
+        # it routinely outlives the WS connection/request session that
+        # started it. None in any context that never arms a party timer
+        # (e.g. older test fixtures) - schedule_party_timer's callers
+        # always go through code paths that pass a real db.
+        self.db = db
         self.local: dict[str, dict[str, object]] = {}
         self.pending_offers: dict[str, str] = {}
+        # One in-process asyncio.sleep task per live party-game round (or
+        # per post-reveal pause), keyed by party_game_id - never more than
+        # one entry per key, since a game is always waiting on exactly one
+        # of those two things at a time. Viable because this app deploys
+        # as exactly one long-running process (render.yaml/DEPLOY.md): only
+        # the instance that started/advanced the round runs this task; when
+        # it fires, the callback goes through hub.publish, which already
+        # fans out to every instance via Redis pubsub regardless of which
+        # instance's timer fired. If this instance crashes mid-round, the
+        # timer is lost with no server-side fallback - accepted MVP
+        # tradeoff, same spirit as SPEC.md's room-deletion scheduler note.
+        self.party_timers: dict[str, asyncio.Task] = {}
         self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._listen())
 
     async def stop(self) -> None:
+        for key in list(self.party_timers.keys()):
+            self.cancel_party_timer(key)
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
+
+    def schedule_party_timer(self, key: str, delay_seconds: float, callback) -> None:
+        """Arms an in-process delayed callback, replacing any existing
+        timer under `key` - the one generic primitive behind both a
+        round's question-deadline and its post-reveal pause (two uses of
+        the same mechanism)."""
+        self.cancel_party_timer(key)
+
+        async def _run():
+            try:
+                await asyncio.sleep(delay_seconds)
+            except asyncio.CancelledError:
+                return
+            self.party_timers.pop(key, None)
+            await callback()
+
+        self.party_timers[key] = asyncio.create_task(_run())
+
+    def cancel_party_timer(self, key: str) -> None:
+        task = self.party_timers.pop(key, None)
+        if task is not None:
+            task.cancel()
 
     async def _listen(self) -> None:
         pubsub = self.redis.pubsub()
@@ -889,6 +932,191 @@ def _result_message(game, white: Member, black: Member) -> str:
     return f"{label['emoji']} {winner} wins the {label['name']} game ({termination})."
 
 
+# ---- Party games (trivia, the first) ----
+# N arbitrary room participants in a host-started lobby, not the 2-seat
+# board-game model above - see app/party_engines/base.py. One live party
+# game per ROOM at a time (not per-member like board games).
+
+PARTY_REVEAL_PAUSE_SECONDS = 5
+
+PARTY_GAME_LABELS: dict[str, dict[str, str]] = {
+    "trivia": {"emoji": "🧠", "name": "Trivia Night"},
+}
+
+
+def _party_game_label(kind: str) -> dict[str, str]:
+    return PARTY_GAME_LABELS.get(kind, {"emoji": "🎉", "name": kind})
+
+
+def _party_result_message(party_game, scoreboard: list[dict]) -> str:
+    label = _party_game_label(party_game.kind)
+    if not scoreboard:
+        return f"{label['emoji']} {label['name']} has ended."
+    winner = scoreboard[0]
+    return f"{label['emoji']} {winner['name']} wins {label['name']} with {winner['score']} points!"
+
+
+async def _broadcast_party_state(session, redis, hub, room, party_game) -> None:
+    """Sends each participant their OWN build_state_event - the N-player
+    analogue of _broadcast_game_state. Needed because "my_answer" is
+    viewer-specific even though the rest of the payload is identical for
+    everyone; using this same per-viewer loop for the reveal phase too
+    (where nothing is secret anymore) trades a few extra cheap rebuilds
+    for one code path, same tradeoff _broadcast_game_state already makes
+    for itself. While status=="lobby" this also room-broadcasts once so
+    non-participants can discover and join it."""
+    if party_game.status == "lobby":
+        event = await party_games_mod.build_state_event(session, party_game)
+        await hub.publish(room.id, event)
+        return
+    for member_id in json.loads(party_game.participants_json):
+        event = await party_games_mod.build_state_event(session, party_game, member_id)
+        await hub.publish(room.id, event, to_member_id=member_id)
+
+
+async def _advance_or_finish_party_round(session, settings, redis, hub, room, party_game) -> None:
+    """THE one place a round ends - called by the server timer firing, by
+    every participant answering early, or by the host's skip action.
+    Idempotent against the timer and an early-finish racing each other
+    (two different DB sessions both reaching here around the same
+    instant): party_games.time_up -> engine.time_up only does real work
+    if the round hasn't already been revealed; a second caller that
+    loses the race just re-broadcasts the already-current reveal - same
+    "only the first report does anything, the rest are no-ops" tolerance
+    handle_music_track_ended already documents for itself."""
+    hub.cancel_party_timer(party_game.id)
+    party_game, game_over = await party_games_mod.time_up(session, party_game)
+    await _broadcast_party_state(session, redis, hub, room, party_game)
+
+    if game_over:
+        final = await party_games_mod.build_state_event(session, party_game)
+        await post_system_message(
+            session, settings, hub, room, _party_result_message(party_game, final["scoreboard"])
+        )
+        return
+
+    hub.schedule_party_timer(
+        party_game.id,
+        PARTY_REVEAL_PAUSE_SECONDS,
+        lambda: _handle_reveal_pause_elapsed(hub, settings, room.id, party_game.id),
+    )
+
+
+async def _handle_reveal_pause_elapsed(hub, settings, room_id: str, party_game_id: str) -> None:
+    if hub.db is None:
+        return
+    async with hub.db.session() as session:
+        try:
+            party_game = await session.get(PartyGame, party_game_id)
+            room = await session.get(Room, room_id)
+            if party_game is None or party_game.status != "active" or room is None or not room.is_active():
+                return
+            party_game, duration = await party_games_mod.advance_round(session, party_game)
+            await _broadcast_party_state(session, hub.redis, hub, room, party_game)
+            hub.schedule_party_timer(
+                party_game.id,
+                duration,
+                lambda: _handle_round_timeout(hub, settings, room.id, party_game.id),
+            )
+        except Exception:
+            pass  # must never crash the Hub's listener loop or another live timer
+
+
+async def _handle_round_timeout(hub, settings, room_id: str, party_game_id: str) -> None:
+    if hub.db is None:
+        return
+    async with hub.db.session() as session:
+        try:
+            party_game = await session.get(PartyGame, party_game_id)
+            room = await session.get(Room, room_id)
+            if party_game is None or party_game.status != "active" or room is None or not room.is_active():
+                return
+            await _advance_or_finish_party_round(session, settings, hub.redis, hub, room, party_game)
+        except Exception:
+            pass
+
+
+async def handle_start_party_game(session, settings, redis, hub, room, actor, data):
+    party_game = await party_games_mod.create_lobby(session, room, actor, kind=data.get("kind", "trivia"))
+    await _broadcast_party_state(session, redis, hub, room, party_game)
+
+
+async def handle_join_party_game(session, settings, redis, hub, room, actor, data):
+    party_game = await party_games_mod.get_party_game_or_404(session, room.id, data.get("party_game_id"))
+    party_game = await party_games_mod.join_lobby(session, party_game, actor)
+    await _broadcast_party_state(session, redis, hub, room, party_game)
+
+
+async def handle_leave_party_game(session, settings, redis, hub, room, actor, data):
+    party_game = await party_games_mod.get_party_game_or_404(session, room.id, data.get("party_game_id"))
+    party_game = await party_games_mod.leave_lobby(session, party_game, actor)
+    await _broadcast_party_state(session, redis, hub, room, party_game)
+
+
+async def handle_begin_party_game(session, settings, redis, hub, room, actor, data):
+    party_game = await party_games_mod.get_party_game_or_404(session, room.id, data.get("party_game_id"))
+    party_game, duration = await party_games_mod.start_game(session, party_game, actor)
+    await _broadcast_party_state(session, redis, hub, room, party_game)
+    hub.schedule_party_timer(
+        party_game.id, duration, lambda: _handle_round_timeout(hub, settings, room.id, party_game.id)
+    )
+    label = _party_game_label(party_game.kind)
+    n = len(json.loads(party_game.participants_json))
+    await post_system_message(
+        session, settings, hub, room,
+        f"{label['emoji']} {actor.display_name} started a game of {label['name']} with {n} players!",
+    )
+
+
+async def handle_party_action(session, settings, redis, hub, room, actor, data):
+    party_game = await party_games_mod.get_party_game_or_404(session, room.id, data.get("party_game_id"))
+    engine = party_games_mod.get_party_engine(party_game.kind)
+    try:
+        action = engine.parse_action(data)
+    except (KeyError, ValueError, TypeError):
+        raise DomainError("bad_request", "Missing or invalid action.")
+    party_game, round_over = await party_games_mod.submit_answer(session, party_game, actor, action)
+    await _broadcast_party_state(session, redis, hub, room, party_game)
+    if round_over:
+        await _advance_or_finish_party_round(session, settings, redis, hub, room, party_game)
+
+
+async def handle_skip_party_round(session, settings, redis, hub, room, actor, data):
+    party_game = await party_games_mod.get_party_game_or_404(session, room.id, data.get("party_game_id"))
+    await party_games_mod.skip_round(session, party_game, actor)  # permission check only
+    await _advance_or_finish_party_round(session, settings, redis, hub, room, party_game)
+
+
+async def handle_cancel_party_game(session, settings, redis, hub, room, actor, data):
+    party_game = await party_games_mod.get_party_game_or_404(session, room.id, data.get("party_game_id"))
+    hub.cancel_party_timer(party_game.id)
+    party_game = await party_games_mod.cancel_game(session, party_game, actor)
+    await hub.publish(room.id, {"type": "party_cancelled", "party_game_id": party_game.id})
+
+
+async def cleanup_party_lobby_on_disconnect(session, settings, hub, room_id: str, member_id: str) -> None:
+    """Only matters pre-start - once active, the roster is locked and the
+    round timer is authoritative regardless of who's connected (same
+    spirit as music's TTL-based tolerance), so this is a silent no-op for
+    an active/finished game. If removing the last lobby participant
+    empties the roster, auto-cancels the now-unreachable lobby rather
+    than leaving a permanent "0 players" ghost nobody can ever start."""
+    party_game = await party_games_mod.get_live_party_game_for_room(session, room_id)
+    if party_game is None or party_game.status != "lobby":
+        return
+    member = await session.get(Member, member_id)
+    room = await session.get(Room, room_id)
+    if member is None or room is None:
+        return
+    party_game = await party_games_mod.leave_lobby(session, party_game, member)
+    if not json.loads(party_game.participants_json):
+        party_game.status = "cancelled"
+        await session.commit()
+        await hub.publish(room.id, {"type": "party_cancelled", "party_game_id": party_game.id})
+        return
+    await hub.publish(room.id, await party_games_mod.build_state_event(session, party_game))
+
+
 async def handle_leave(session, settings, redis, hub, room, actor, data):
     display_name = actor.display_name
     await members_mod.leave_room(session, actor)
@@ -935,6 +1163,13 @@ HANDLERS = {
     "unwatch_game": handle_unwatch_game,
     "create_game_link": handle_create_game_link,
     "claim_game_link": handle_claim_game_link,
+    "start_party_game": handle_start_party_game,
+    "join_party_game": handle_join_party_game,
+    "leave_party_game": handle_leave_party_game,
+    "begin_party_game": handle_begin_party_game,
+    "party_action": handle_party_action,
+    "skip_party_round": handle_skip_party_round,
+    "cancel_party_game": handle_cancel_party_game,
 }
 
 

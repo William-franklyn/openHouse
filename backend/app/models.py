@@ -219,6 +219,41 @@ class Game(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 
 
+class PartyGame(Base):
+    __tablename__ = "party_games"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="trivia")
+    # Whoever opened the lobby - never re-checked as an ongoing privilege
+    # except for the one host-only "skip round early" action. Always known
+    # at creation time, unlike Game.black_member_id, so NOT nullable.
+    host_member_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    # "lobby" (open, nothing started) -> "active" (roster locked, rounds
+    # running) -> "finished" | "cancelled". No per-round phase lives here -
+    # that's state_json's "phase" field, since it changes every few
+    # seconds and shouldn't be a column rewritten on every tick.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="lobby")
+    # Every member_id in the lobby the instant status flipped to "active" -
+    # a JSON list, not fixed columns like Game.white/black_member_id,
+    # since party games have no fixed seat count.
+    participants_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # Cumulative points per member_id ({"<member_id>": 1234, ...}) - kept
+    # separate from state_json (which resets its round-local fields every
+    # start_round() call) because this is the one thing that must survive
+    # every round transition intact.
+    scores_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    round_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_rounds: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    # The volatile, engine-owned per-round snapshot: current question
+    # (WITH its correct answer - redaction happens only when building the
+    # outgoing event, never in storage), phase, per-round answers, round
+    # deadlines. Always a direct snapshot, never replayed from a log.
+    state_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
 class MetricDaily(Base):
     __tablename__ = "metrics_daily"
 
