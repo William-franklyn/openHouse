@@ -575,6 +575,82 @@ export interface WSPartyCancelled {
   party_game_id: string;
 }
 
+// ---- Card games: poker is the first. A seated table of N players whose
+// chip stacks persist across many hands in one sitting - a third,
+// genuinely different shape from both the 2-seat board games and the
+// round-based party games (see the backend's app/card_engines/base.py).
+// One live card game per room at a time. ----
+
+export type CardGameKind = "poker";
+export type CardGameStatus = "lobby" | "active" | "finished" | "cancelled";
+export type PokerPhase = "lobby" | "preflop" | "flop" | "turn" | "river" | "showdown" | "hand_over";
+export type PokerActionKind = "fold" | "check" | "call" | "raise";
+
+export interface PokerSeat {
+  member_id: string;
+  name: string;
+  chips: number;
+  bet_this_street: number;
+  folded: boolean;
+  all_in: boolean;
+  sitting_out: boolean;
+  // Present only for the viewer's own seat (pre-resolution) or for any
+  // seat that reached showdown (post-resolution) - never for a folded
+  // seat, even after the hand is over.
+  hole_cards: [string, string] | null;
+  hand_description: string | null;
+}
+
+export interface PokerLegalActions {
+  actions: PokerActionKind[];
+  call_amount: number;
+  min_raise_to: number | null;
+  max_raise_to: number | null;
+}
+
+export interface PokerPotSummary {
+  amount: number;
+  winners: string[];
+  eligible: string[];
+}
+
+interface WSCardStateBase {
+  type: "card_state";
+  card_game_id: string;
+  kind: CardGameKind;
+  status: CardGameStatus;
+  host_member_id: string;
+  participant_ids: string[];
+  starting_chips: number;
+}
+
+export interface WSCardLobbyState extends WSCardStateBase {
+  phase: "lobby";
+  seats: { member_id: string; name: string }[];
+}
+
+export interface WSCardActiveState extends WSCardStateBase {
+  phase: Exclude<PokerPhase, "lobby">;
+  hand_number: number;
+  dealer_index: number;
+  small_blind: number;
+  big_blind: number;
+  community_cards: string[];
+  pot: number;
+  current_bet: number;
+  action_on: string | null;
+  seats: PokerSeat[];
+  my_legal_actions: PokerLegalActions;
+  pot_summary: PokerPotSummary[] | null;
+}
+
+export type WSCardState = WSCardLobbyState | WSCardActiveState;
+
+export interface WSCardCancelled {
+  type: "card_cancelled";
+  card_game_id: string;
+}
+
 export type WSServerEvent =
   | WSReady
   | WSMessage
@@ -610,7 +686,9 @@ export type WSServerEvent =
   | WSGameWatchers
   | WSGameLinkWaiting
   | WSPartyState
-  | WSPartyCancelled;
+  | WSPartyCancelled
+  | WSCardState
+  | WSCardCancelled;
 
 export class ApiError extends Error {
   code: string;

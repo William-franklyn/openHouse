@@ -2,6 +2,8 @@ import { create } from "zustand";
 import {
   BattleshipCell,
   CallSignalEvent,
+  CardGameKind,
+  CardGameStatus,
   ChannelOut,
   GameKind,
   GameResult,
@@ -12,6 +14,8 @@ import {
   PartyGameStatus,
   PartyRoundPhase,
   PartyScoreRow,
+  PokerActionKind,
+  PokerPhase,
   PresenceMember,
   RoomPhoto,
   TriviaQuestionPublic,
@@ -149,6 +153,63 @@ export interface PartyGameState {
   roundPointsAwarded: Record<string, number> | null;
 }
 
+// Card games (poker, the first) - a seated table whose chip stacks
+// persist across many hands, a third shape distinct from both GameState
+// (2 seats) and PartyGameState (one round, synchronized reveal). One
+// live card game per room, same single-slot reasoning as myPartyGame.
+export interface CardLobbySeat {
+  memberId: string;
+  name: string;
+}
+
+export interface CardActiveSeat {
+  memberId: string;
+  name: string;
+  chips: number;
+  betThisStreet: number;
+  folded: boolean;
+  allIn: boolean;
+  sittingOut: boolean;
+  holeCards: [string, string] | null;
+  handDescription: string | null;
+}
+
+interface CardGameStateBase {
+  cardGameId: string;
+  kind: CardGameKind;
+  status: CardGameStatus;
+  hostMemberId: string;
+  participantIds: string[];
+  startingChips: number;
+}
+
+export interface CardLobbyState extends CardGameStateBase {
+  phase: "lobby";
+  seats: CardLobbySeat[];
+}
+
+export interface CardActiveState extends CardGameStateBase {
+  phase: Exclude<PokerPhase, "lobby">;
+  handNumber: number;
+  dealerIndex: number;
+  smallBlind: number;
+  bigBlind: number;
+  communityCards: string[];
+  pot: number;
+  currentBet: number;
+  actionOn: string | null;
+  seats: CardActiveSeat[];
+  myLegalActions: {
+    actions: PokerActionKind[];
+    callAmount: number;
+    minRaiseTo: number | null;
+    maxRaiseTo: number | null;
+  };
+  potSummary: { amount: number; winners: string[]; eligible: string[] }[] | null;
+}
+
+export type CardGameState = CardLobbyState | CardActiveState;
+
 export type ConnectionStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
 export interface RoomMusicState {
@@ -252,6 +313,10 @@ interface RoomStoreState {
   // myGameId): everyone in the room sees the same slot.
   myPartyGame: PartyGameState | null;
 
+  // The one live card game (poker table) in this room, if any - same
+  // room-wide single-slot shape as myPartyGame.
+  myCardGame: CardGameState | null;
+
   initRoom: (params: {
     roomId: string;
     memberId: string;
@@ -297,6 +362,7 @@ interface RoomStoreState {
   setWatchedGame: (game: GameState | null) => void;
   setLinkWaitingGame: (game: { gameId: string; kind: GameKind; linkToken: string } | null) => void;
   setPartyGame: (game: PartyGameState | null) => void;
+  setCardGame: (game: CardGameState | null) => void;
   reset: () => void;
 }
 
@@ -335,6 +401,7 @@ const initialState = {
   watcherCounts: {} as Record<string, number>,
   linkWaitingGame: null as { gameId: string; kind: GameKind; linkToken: string } | null,
   myPartyGame: null as PartyGameState | null,
+  myCardGame: null as CardGameState | null,
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {
@@ -493,6 +560,8 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
   setLinkWaitingGame: (game) => set({ linkWaitingGame: game }),
 
   setPartyGame: (game) => set({ myPartyGame: game }),
+
+  setCardGame: (game) => set({ myCardGame: game }),
 
   reset: () => set(initialState),
 }));

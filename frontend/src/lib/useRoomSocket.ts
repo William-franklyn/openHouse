@@ -345,6 +345,60 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           store.setPartyGame(null);
         }
         break;
+      case "card_state": {
+        const base = {
+          cardGameId: event.card_game_id,
+          kind: event.kind,
+          status: event.status,
+          hostMemberId: event.host_member_id,
+          participantIds: event.participant_ids,
+          startingChips: event.starting_chips,
+        };
+        if (event.phase === "lobby") {
+          store.setCardGame({
+            ...base,
+            phase: "lobby",
+            seats: event.seats.map((s) => ({ memberId: s.member_id, name: s.name })),
+          });
+        } else {
+          store.setCardGame({
+            ...base,
+            phase: event.phase,
+            handNumber: event.hand_number,
+            dealerIndex: event.dealer_index,
+            smallBlind: event.small_blind,
+            bigBlind: event.big_blind,
+            communityCards: event.community_cards,
+            pot: event.pot,
+            currentBet: event.current_bet,
+            actionOn: event.action_on,
+            seats: event.seats.map((s) => ({
+              memberId: s.member_id,
+              name: s.name,
+              chips: s.chips,
+              betThisStreet: s.bet_this_street,
+              folded: s.folded,
+              allIn: s.all_in,
+              sittingOut: s.sitting_out,
+              holeCards: s.hole_cards,
+              handDescription: s.hand_description,
+            })),
+            myLegalActions: {
+              actions: event.my_legal_actions.actions,
+              callAmount: event.my_legal_actions.call_amount,
+              minRaiseTo: event.my_legal_actions.min_raise_to,
+              maxRaiseTo: event.my_legal_actions.max_raise_to,
+            },
+            potSummary: event.pot_summary,
+          });
+        }
+        break;
+      }
+      case "card_cancelled":
+        if (store.myCardGame?.cardGameId === event.card_game_id) {
+          store.setCardGame(null);
+        }
+        break;
       case "photo_shared":
         store.addPhoto({
           file_id: event.file_id,

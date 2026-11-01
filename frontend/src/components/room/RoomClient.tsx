@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { clearSession, loadSession, StoredSession } from "@/lib/session";
 import { useRoomStore } from "@/lib/store";
 import { useRoomSocket } from "@/lib/useRoomSocket";
-import { ApiError, GameKind, PartyGameKind, RoomPublic } from "@/lib/types";
+import { ApiError, CardGameKind, GameKind, PartyGameKind, RoomPublic } from "@/lib/types";
 import { RoomSidebar } from "./RoomSidebar";
 import { ConversationHeader } from "./ConversationHeader";
 import { PinnedBanner } from "./PinnedBanner";
@@ -35,6 +35,8 @@ import { OutgoingChallengeToast } from "./OutgoingChallengeToast";
 import { LiveGamesBanner } from "./LiveGamesBanner";
 import { PartyGameModal } from "./PartyGameModal";
 import { PartyGameBanner } from "./PartyGameBanner";
+import { PokerTable } from "./PokerTable";
+import { PokerTableBanner } from "./PokerTableBanner";
 
 export function RoomClient({ roomId }: { roomId: string }) {
   const router = useRouter();
@@ -55,6 +57,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [startGameKind, setStartGameKind] = useState<GameKind | null>(null);
   const [showGameBoard, setShowGameBoard] = useState(false);
   const [showPartyGameModal, setShowPartyGameModal] = useState(false);
+  const [showPokerTable, setShowPokerTable] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ memberId?: string; messageId?: string } | null>(null);
 
   const { send } = useRoomSocket(session?.token ?? null);
@@ -67,6 +70,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const myGameId = useRoomStore((s) => s.myGameId);
   const linkWaitingGame = useRoomStore((s) => s.linkWaitingGame);
   const myPartyGame = useRoomStore((s) => s.myPartyGame);
+  const myCardGame = useRoomStore((s) => s.myCardGame);
   const ownershipOfferFrom = useRoomStore((s) => s.ownershipOfferFrom);
   const removedReason = useRoomStore((s) => s.removedReason);
   const roomDeletedMessage = useRoomStore((s) => s.roomDeletedMessage);
@@ -133,6 +137,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
       setShowPartyGameModal(true);
     }
   }, [myPartyGame, myMemberId]);
+
+  // Same reasoning as the party-game effect above - only seated players
+  // get the table forced onto their screen; everyone else sees
+  // PokerTableBanner while the lobby is still open to join.
+  useEffect(() => {
+    if (myCardGame && myMemberId && myCardGame.participantIds.includes(myMemberId)) {
+      setShowPokerTable(true);
+    }
+  }, [myCardGame, myMemberId]);
 
   // A ?play=<token> in the URL (from an invite link) gets claimed once the
   // socket is open, then stripped from the URL so a refresh doesn't
@@ -217,12 +230,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
               ? setShowGameBoard(true)
               : myPartyGame && myMemberId && myPartyGame.participantIds.includes(myMemberId)
                 ? setShowPartyGameModal(true)
-                : setShowGamesModal(true)
+                : myCardGame && myMemberId && myCardGame.participantIds.includes(myMemberId)
+                  ? setShowPokerTable(true)
+                  : setShowGamesModal(true)
           }
           onOpenMusicPicker={() => setShowMusicPicker(true)}
         />
         <LiveGamesBanner send={send} />
         {myMemberId && <PartyGameBanner myMemberId={myMemberId} send={send} />}
+        {myMemberId && <PokerTableBanner myMemberId={myMemberId} send={send} />}
         <PinnedBanner />
         <MusicPlayer
           token={session.token}
@@ -345,6 +361,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onClose={() => setShowGamesModal(false)}
         onPick={(kind) => setStartGameKind(kind)}
         onPickParty={(kind: PartyGameKind) => send("start_party_game", { kind })}
+        onPickCard={(kind: CardGameKind) => send("start_card_game", { kind })}
       />
       {myMemberId && startGameKind && (
         <StartGameModal
@@ -372,6 +389,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <PartyGameModal
           open={showPartyGameModal}
           onClose={() => setShowPartyGameModal(false)}
+          myMemberId={myMemberId}
+          send={send}
+        />
+      )}
+      {myMemberId && (
+        <PokerTable
+          open={showPokerTable}
+          onClose={() => setShowPokerTable(false)}
           myMemberId={myMemberId}
           send={send}
         />

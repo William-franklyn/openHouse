@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Type, Hand, Target, Dices, Spade, LucideIcon } from "lucide-react";
+import { Type, Hand, Target, Dices, LucideIcon } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { GAME_REGISTRY } from "@/lib/gameRegistry";
 import { PARTY_GAME_REGISTRY } from "@/lib/partyGameRegistry";
-import { GameKind, PartyGameKind } from "@/lib/types";
+import { CARD_GAME_REGISTRY } from "@/lib/cardGameRegistry";
+import { CardGameKind, GameKind, PartyGameKind } from "@/lib/types";
 
 interface GameOption {
   id: string;
@@ -13,6 +14,7 @@ interface GameOption {
   icon: LucideIcon;
   live: boolean;
   partyKind?: PartyGameKind;
+  cardKind?: CardGameKind;
 }
 
 const LIVE_GAMES: GameOption[] = Object.values(GAME_REGISTRY).map((entry) => ({
@@ -30,29 +32,39 @@ const LIVE_PARTY_GAMES: GameOption[] = Object.values(PARTY_GAME_REGISTRY).map((e
   partyKind: entry.kind,
 }));
 
+const LIVE_CARD_GAMES: GameOption[] = Object.values(CARD_GAME_REGISTRY).map((entry) => ({
+  id: entry.kind,
+  name: entry.label,
+  icon: entry.icon,
+  live: true,
+  cardKind: entry.kind,
+}));
+
 // Still-unbuilt games stay as "coming soon" placeholders here - once one
-// goes live, moving it into GAME_REGISTRY/partyGameRegistry.ts is the
-// only change needed for it to show up above instead of here.
+// goes live, moving it into GAME_REGISTRY/partyGameRegistry.ts/
+// cardGameRegistry.ts is the only change needed for it to show up above
+// instead of here.
 const COMING_SOON: GameOption[] = [
   { id: "wordguess", name: "Word Guess", icon: Type, live: false },
   { id: "rps", name: "Rock Paper Scissors", icon: Hand, live: false },
   { id: "darts", name: "Darts", icon: Target, live: false },
   { id: "ludo", name: "Ludo", icon: Dices, live: false },
-  { id: "cards", name: "Card Game", icon: Spade, live: false },
 ];
 
-const GAMES: GameOption[] = [...LIVE_GAMES, ...LIVE_PARTY_GAMES, ...COMING_SOON];
+const GAMES: GameOption[] = [...LIVE_GAMES, ...LIVE_PARTY_GAMES, ...LIVE_CARD_GAMES, ...COMING_SOON];
 
 export function GamesModal({
   open,
   onClose,
   onPick,
   onPickParty,
+  onPickCard,
 }: {
   open: boolean;
   onClose: () => void;
   onPick: (kind: GameKind) => void;
   onPickParty: (kind: PartyGameKind) => void;
+  onPickCard: (kind: CardGameKind) => void;
 }) {
   const [toast, setToast] = useState<string | null>(null);
 
@@ -65,6 +77,8 @@ export function GamesModal({
     onClose();
     if (game.partyKind) {
       onPickParty(game.partyKind);
+    } else if (game.cardKind) {
+      onPickCard(game.cardKind);
     } else {
       onPick(game.id as GameKind);
     }
