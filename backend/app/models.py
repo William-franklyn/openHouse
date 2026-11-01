@@ -254,6 +254,34 @@ class PartyGame(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 
 
+class CardGame(Base):
+    __tablename__ = "card_games"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    room_id: Mapped[str] = mapped_column(ForeignKey("rooms.id"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="poker")
+    host_member_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    # "lobby" -> "active" -> "finished" | "cancelled", same lifecycle
+    # shape as PartyGame. No per-hand phase here - that's state_json's
+    # "phase" field (preflop/flop/turn/river/showdown/hand_over), which
+    # changes multiple times per hand.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="lobby")
+    # Seating order, fixed the instant status flips to "active" - a
+    # player's SEAT persists even after they bust out (chips hit 0),
+    # unlike PartyGame's participants_json which only ever grows/shrinks
+    # pre-start.
+    participants_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    starting_chips: Mapped[int] = mapped_column(Integer, nullable=False, default=1000)
+    # The one authoritative snapshot - current chip stacks, hole cards,
+    # community cards, betting state, everything. Chip stacks live INSIDE
+    # this blob (not a separate column like PartyGame.scores_json) because
+    # they're engine-owned state that resolve_hand updates directly as
+    # part of awarding a pot, not a value the caller folds in afterward.
+    state_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
 class MetricDaily(Base):
     __tablename__ = "metrics_daily"
 

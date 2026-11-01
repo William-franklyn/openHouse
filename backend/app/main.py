@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app import card_games as card_games_mod
 from app import files as files_mod
 from app import games as games_mod
 from app import members as members_mod
@@ -696,6 +697,10 @@ def register_routes(app: FastAPI) -> None:
                 if party_event is not None:
                     await websocket.send_json(party_event)
 
+                card_event = await card_games_mod.connect_snapshot_event(session, room_id, member_id)
+                if card_event is not None:
+                    await websocket.send_json(card_event)
+
                 while True:
                     raw = await _receive_json(websocket)
                     if raw is None:
@@ -731,6 +736,10 @@ def register_routes(app: FastAPI) -> None:
                         pass
                     try:
                         await realtime.cleanup_party_lobby_on_disconnect(session, settings, hub, room_id, member_id)
+                    except Exception:
+                        pass
+                    try:
+                        await realtime.cleanup_card_lobby_on_disconnect(session, settings, hub, room_id, member_id)
                     except Exception:
                         pass
 

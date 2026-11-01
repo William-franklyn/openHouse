@@ -21,6 +21,7 @@ from app import games as games_mod
 from app import members as members_mod
 from app import messages as messages_mod
 from app import music_library
+from app import card_games as card_games_mod
 from app import party_games as party_games_mod
 from app import rooms as rooms_mod
 from app.errors import DomainError
@@ -1117,6 +1118,144 @@ async def cleanup_party_lobby_on_disconnect(session, settings, hub, room_id: str
     await hub.publish(room.id, await party_games_mod.build_state_event(session, party_game))
 
 
+# ---- Card games (poker, the first) ----
+# A seated table of N players whose chip stacks persist across many hands
+# in one sitting - closer in shape to party games (N participants, a
+# lobby) than to the 2-seat board games, but with no round timer: a
+# betting decision has no fixed length, so (unlike Trivia) nothing here
+# advances on a clock - see app/card_engines/base.py.
+
+CARD_GAME_LABELS: dict[str, dict[str, str]] = {
+    "poker": {"emoji": "\U0001fa99", "name": "Poker"},
+}
+
+
+def _card_game_label(kind: str) -> dict[str, str]:
+    return CARD_GAME_LABELS.get(kind, {"emoji": "\U0001f0cf", "name": kind})
+
+
+async def _broadcast_card_state(session, redis, hub, room, card_game) -> None:
+    """Sends each seated player their OWN build_state_event - hole cards
+    are viewer-specific for the entire hand (not just until a reveal
+    point the way Trivia's answers are), so there is no safe shared
+    payload once a hand is active. Room-wide while status=="lobby" so the
+    table is discoverable, same as PartyGame."""
+    if card_game.status == "lobby":
+        event = await card_games_mod.build_state_event(session, card_game)
+        await hub.publish(room.id, event)
+        return
+    for member_id in json.loads(card_game.participants_json):
+        event = await card_games_mod.build_state_event(session, card_game, member_id)
+        await hub.publish(room.id, event, to_member_id=member_id)
+
+
+async def _resolve_and_broadcast_hand(session, settings, redis, hub, room, card_game) -> None:
+    card_game, game_over = await card_games_mod.resolve_hand(session, card_game)
+    await _broadcast_card_state(session, redis, hub, room, card_game)
+
+    state = json.loads(card_game.state_json)
+    label = _card_game_label(card_game.kind)
+    showdown = state.get("showdown")
+    if showdown:
+        winners = {w for p in (state.get("pot_summary") or []) for w in p["winners"]}
+        if winners:
+            names = []
+            for member_id in winners:
+                member = await session.get(Member, member_id)
+                names.append(member.display_name if member else "Unknown")
+            description = showdown.get(next(iter(winners)), {}).get("description", "")
+            await post_system_message(
+                session, settings, hub, room,
+                f"{label['emoji']} {', '.join(names)} won the pot with {description}!",
+            )
+    if game_over:
+        winner_id = max(state["chip_stacks"], key=lambda m: state["chip_stacks"][m])
+        winner = await session.get(Member, winner_id)
+        await post_system_message(
+            session, settings, hub, room,
+            f"{label['emoji']} {winner.display_name if winner else 'Someone'} won the whole table!",
+        )
+
+
+async def handle_start_card_game(session, settings, redis, hub, room, actor, data):
+    starting_chips = data.get("starting_chips", card_games_mod.DEFAULT_STARTING_CHIPS)
+    if not isinstance(starting_chips, int) or isinstance(starting_chips, bool) or not (10 <= starting_chips <= 1_000_000):
+        raise DomainError("bad_request", "Invalid starting chip count.")
+    card_game = await card_games_mod.create_lobby(
+        session, room, actor, kind=data.get("kind", "poker"), starting_chips=starting_chips
+    )
+    await _broadcast_card_state(session, redis, hub, room, card_game)
+
+
+async def handle_join_card_game(session, settings, redis, hub, room, actor, data):
+    card_game = await card_games_mod.get_card_game_or_404(session, room.id, data.get("card_game_id"))
+    card_game = await card_games_mod.join_lobby(session, card_game, actor)
+    await _broadcast_card_state(session, redis, hub, room, card_game)
+
+
+async def handle_leave_card_game(session, settings, redis, hub, room, actor, data):
+    card_game = await card_games_mod.get_card_game_or_404(session, room.id, data.get("card_game_id"))
+    card_game = await card_games_mod.leave_lobby(session, card_game, actor)
+    await _broadcast_card_state(session, redis, hub, room, card_game)
+
+
+async def handle_begin_card_game(session, settings, redis, hub, room, actor, data):
+    card_game = await card_games_mod.get_card_game_or_404(session, room.id, data.get("card_game_id"))
+    card_game = await card_games_mod.start_game(session, card_game, actor)
+    await _broadcast_card_state(session, redis, hub, room, card_game)
+    label = _card_game_label(card_game.kind)
+    n = len(json.loads(card_game.participants_json))
+    await post_system_message(
+        session, settings, hub, room,
+        f"{label['emoji']} {actor.display_name} started a game of {label['name']} with {n} players!",
+    )
+
+
+async def handle_card_action(session, settings, redis, hub, room, actor, data):
+    card_game = await card_games_mod.get_card_game_or_404(session, room.id, data.get("card_game_id"))
+    engine = card_games_mod.get_card_engine(card_game.kind)
+    try:
+        action = engine.parse_action(data)
+    except (KeyError, ValueError, TypeError):
+        raise DomainError("bad_request", "Missing or invalid action.")
+    card_game, hand_over = await card_games_mod.submit_action(session, card_game, actor, action)
+    await _broadcast_card_state(session, redis, hub, room, card_game)
+    if hand_over:
+        await _resolve_and_broadcast_hand(session, settings, redis, hub, room, card_game)
+
+
+async def handle_start_next_hand(session, settings, redis, hub, room, actor, data):
+    card_game = await card_games_mod.get_card_game_or_404(session, room.id, data.get("card_game_id"))
+    card_game = await card_games_mod.start_next_hand(session, card_game, actor)
+    await _broadcast_card_state(session, redis, hub, room, card_game)
+
+
+async def handle_cancel_card_game(session, settings, redis, hub, room, actor, data):
+    card_game = await card_games_mod.get_card_game_or_404(session, room.id, data.get("card_game_id"))
+    card_game = await card_games_mod.cancel_game(session, card_game, actor)
+    await hub.publish(room.id, {"type": "card_cancelled", "card_game_id": card_game.id})
+
+
+async def cleanup_card_lobby_on_disconnect(session, settings, hub, room_id: str, member_id: str) -> None:
+    """Mirrors cleanup_party_lobby_on_disconnect - only matters pre-start;
+    once active, a seat is held (not vacated) regardless of connection,
+    same as leave_lobby's own no-op-once-active behavior."""
+    card_game = await card_games_mod.get_live_card_game_for_room(session, room_id)
+    if card_game is None or card_game.status != "lobby":
+        return
+    member = await session.get(Member, member_id)
+    room = await session.get(Room, room_id)
+    if member is None or room is None:
+        return
+    card_game = await card_games_mod.leave_lobby(session, card_game, member)
+    if not json.loads(card_game.participants_json):
+        card_game.status = "cancelled"
+        await session.commit()
+        await hub.publish(room.id, {"type": "card_cancelled", "card_game_id": card_game.id})
+        return
+    await hub.publish(room.id, await card_games_mod.build_state_event(session, card_game))
+
+
 async def handle_leave(session, settings, redis, hub, room, actor, data):
     display_name = actor.display_name
     await members_mod.leave_room(session, actor)
@@ -1170,6 +1309,13 @@ HANDLERS = {
     "party_action": handle_party_action,
     "skip_party_round": handle_skip_party_round,
     "cancel_party_game": handle_cancel_party_game,
+    "start_card_game": handle_start_card_game,
+    "join_card_game": handle_join_card_game,
+    "leave_card_game": handle_leave_card_game,
+    "begin_card_game": handle_begin_card_game,
+    "card_action": handle_card_action,
+    "start_next_hand": handle_start_next_hand,
+    "cancel_card_game": handle_cancel_card_game,
 }
 
 
