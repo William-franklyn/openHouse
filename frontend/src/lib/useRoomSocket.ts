@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { wsUrl } from "./api";
-import { useRoomStore } from "./store";
+import { GameState, useRoomStore } from "./store";
 import { WSServerEvent } from "./types";
 
 const MAX_BACKOFF_MS = 15000;
@@ -151,10 +151,11 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           // The server echoing back my own challenge - show a "waiting
           // for a reply" state, not a toast asking me to accept my own
           // invite. Same self-echo pattern as call_invite.
-          store.setPendingChallenge({ gameId: event.game_id, opponentName: event.opponent_name });
+          store.setPendingChallenge({ gameId: event.game_id, kind: event.kind, opponentName: event.opponent_name });
         } else {
           store.setIncomingGameInvite({
             gameId: event.game_id,
+            kind: event.kind,
             challengerMemberId: event.challenger_member_id,
             challengerName: event.challenger_name,
           });
@@ -163,7 +164,7 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
       case "game_declined":
         if (store.pendingChallenge?.gameId === event.game_id) {
           store.setPendingChallenge(null);
-          store.setError("game_declined", "They declined your chess challenge.");
+          store.setError("game_declined", "They declined your challenge.");
         }
         break;
       case "game_cancelled":
@@ -172,10 +173,10 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
         }
         break;
       case "game_link_waiting":
-        store.setLinkWaitingGame({ gameId: event.game_id, linkToken: event.link_token });
+        store.setLinkWaitingGame({ gameId: event.game_id, kind: event.kind, linkToken: event.link_token });
         break;
       case "game_state": {
-        const gameState = {
+        const base = {
           gameId: event.game_id,
           status: event.status,
           whiteMemberId: event.white_member_id,
@@ -183,16 +184,27 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           blackMemberId: event.black_member_id,
           blackName: event.black_name,
           moves: event.moves,
-          boardFen: event.board_fen,
           turn: event.turn,
-          legalMoves: event.legal_moves,
-          inCheck: event.in_check,
-          lastMoveWasCapture: event.last_move_was_capture,
           gameOver: event.game_over,
           result: event.result,
           termination: event.termination,
           lastMove: event.last_move,
         };
+        let gameState: GameState;
+        if (event.kind === "chess") {
+          gameState = {
+            ...base,
+            kind: "chess",
+            boardFen: event.board_fen,
+            legalMoves: event.legal_moves,
+            inCheck: event.in_check,
+            lastMoveWasCapture: event.last_move_was_capture,
+          };
+        } else if (event.kind === "tictactoe") {
+          gameState = { ...base, kind: "tictactoe", board: event.board };
+        } else {
+          gameState = { ...base, kind: "connect4", board: event.board, legalMoves: event.legal_moves };
+        }
         const amPlayer =
           event.white_member_id === store.myMemberId || event.black_member_id === store.myMemberId;
         if (amPlayer) {
@@ -219,6 +231,7 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
         if (event.white_member_id !== store.myMemberId && event.black_member_id !== store.myMemberId) {
           store.setLiveGame({
             gameId: event.game_id,
+            kind: event.kind,
             whiteMemberId: event.white_member_id,
             whiteName: event.white_name,
             blackMemberId: event.black_member_id,

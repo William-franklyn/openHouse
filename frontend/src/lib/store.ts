@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   CallSignalEvent,
   ChannelOut,
+  GameKind,
   GameResult,
   GameStatus,
   MemberRole,
@@ -18,34 +19,53 @@ export interface IncomingCallInvite {
 
 export interface IncomingGameInvite {
   gameId: string;
+  kind: GameKind;
   challengerMemberId: string;
   challengerName: string;
 }
 
-export interface GameState {
+interface GameStateBase {
   gameId: string;
   status: GameStatus;
   whiteMemberId: string;
   whiteName: string;
   blackMemberId: string;
   blackName: string;
-  moves: string[];
-  boardFen: string;
+  moves: unknown[];
   turn: "white" | "black";
-  legalMoves: string[];
-  inCheck: boolean;
-  lastMoveWasCapture: boolean;
   gameOver: boolean;
   result: GameResult | null;
   termination: string | null;
-  lastMove: string | null;
+  lastMove: unknown | null;
 }
+
+export interface ChessGameState extends GameStateBase {
+  kind: "chess";
+  boardFen: string;
+  legalMoves: string[];
+  inCheck: boolean;
+  lastMoveWasCapture: boolean;
+}
+
+export interface TicTacToeGameState extends GameStateBase {
+  kind: "tictactoe";
+  board: (0 | 1 | null)[];
+}
+
+export interface Connect4GameState extends GameStateBase {
+  kind: "connect4";
+  board: (0 | 1 | null)[][];
+  legalMoves: { column: number }[];
+}
+
+export type GameState = ChessGameState | TicTacToeGameState | Connect4GameState;
 
 // A room-wide "live now" banner entry - lighter than GameState (no board),
 // for games this member isn't playing in. Clicking one sends watch_game,
 // which fetches the real GameState for read-only viewing.
 export interface LiveGame {
   gameId: string;
+  kind: GameKind;
   whiteMemberId: string;
   whiteName: string;
   blackMemberId: string;
@@ -124,7 +144,7 @@ interface RoomStoreState {
   incomingGameInvite: IncomingGameInvite | null;
   // A challenge I sent that's still awaiting a reply - shown as a small
   // "waiting for X" state instead of a toast, since I'm the one who acted.
-  pendingChallenge: { gameId: string; opponentName: string } | null;
+  pendingChallenge: { gameId: string; kind: GameKind; opponentName: string } | null;
   // The one active game's board - null means no board modal should show.
   // Closing the modal just hides it (setMyGameId(null)); the game itself
   // lives server-side (Postgres), so it's not lost, only reconnect/reopen
@@ -148,7 +168,7 @@ interface RoomStoreState {
   // the moment a real game_state for the same game_id arrives (claimed)
   // or it's cancelled. Separate from pendingChallenge (that's a targeted
   // invite to someone already present, not a shareable link).
-  linkWaitingGame: { gameId: string; linkToken: string } | null;
+  linkWaitingGame: { gameId: string; kind: GameKind; linkToken: string } | null;
 
   initRoom: (params: {
     roomId: string;
@@ -185,7 +205,7 @@ interface RoomStoreState {
   mergePhotos: (photos: RoomPhoto[]) => void;
   removePhotoByMessageId: (messageId: string) => void;
   setIncomingGameInvite: (invite: IncomingGameInvite | null) => void;
-  setPendingChallenge: (challenge: { gameId: string; opponentName: string } | null) => void;
+  setPendingChallenge: (challenge: { gameId: string; kind: GameKind; opponentName: string } | null) => void;
   setMyGameId: (gameId: string | null) => void;
   setGame: (game: GameState | null) => void;
   setLiveGame: (game: LiveGame) => void;
@@ -193,7 +213,7 @@ interface RoomStoreState {
   setWatcherCount: (gameId: string, count: number) => void;
   setWatchingGameId: (gameId: string | null) => void;
   setWatchedGame: (game: GameState | null) => void;
-  setLinkWaitingGame: (game: { gameId: string; linkToken: string } | null) => void;
+  setLinkWaitingGame: (game: { gameId: string; kind: GameKind; linkToken: string } | null) => void;
   reset: () => void;
 }
 
@@ -223,14 +243,14 @@ const initialState = {
   callSignalQueue: [],
   photos: [] as RoomPhoto[],
   incomingGameInvite: null as IncomingGameInvite | null,
-  pendingChallenge: null as { gameId: string; opponentName: string } | null,
+  pendingChallenge: null as { gameId: string; kind: GameKind; opponentName: string } | null,
   myGameId: null as string | null,
   game: null as GameState | null,
   liveGames: {} as Record<string, LiveGame>,
   watchingGameId: null as string | null,
   watchedGame: null as GameState | null,
   watcherCounts: {} as Record<string, number>,
-  linkWaitingGame: null as { gameId: string; linkToken: string } | null,
+  linkWaitingGame: null as { gameId: string; kind: GameKind; linkToken: string } | null,
 };
 
 function bumpLastSeq(state: RoomStoreState, channelId: string, seq: number) {

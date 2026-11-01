@@ -4,22 +4,27 @@ import { Link2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
 import { useRoomStore } from "@/lib/store";
+import { GAME_REGISTRY } from "@/lib/gameRegistry";
+import { GameKind } from "@/lib/types";
 
 export function StartGameModal({
   open,
   onClose,
+  kind,
   myMemberId,
   onChallenge,
   onInviteLink,
 }: {
   open: boolean;
   onClose: () => void;
+  kind: GameKind;
   myMemberId: string;
   onChallenge: (opponentId: string) => void;
   onInviteLink: () => void;
 }) {
   const online = useRoomStore((s) => s.online);
   const others = online.filter((m) => m.member_id !== myMemberId);
+  const { emoji, label } = GAME_REGISTRY[kind];
 
   function pick(memberId: string) {
     onChallenge(memberId);
@@ -32,7 +37,7 @@ export function StartGameModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="♟️ Play chess">
+    <Modal open={open} onClose={onClose} title={`${emoji} Play ${label}`}>
       <div className="flex flex-col gap-3">
         <p className="text-[13px] text-muted">Pick who to challenge. They&apos;ll get a prompt to accept.</p>
 

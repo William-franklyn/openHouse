@@ -2,6 +2,7 @@
 
 import { Eye } from "lucide-react";
 import { useRoomStore } from "@/lib/store";
+import { GAME_REGISTRY } from "@/lib/gameRegistry";
 
 /** A slim, non-interrupting strip for games other people in the room are
  * currently playing - deliberately not a toast or modal, since the whole
@@ -23,6 +24,7 @@ export function LiveGamesBanner({ send }: { send: (type: string, data?: Record<s
     <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border bg-accent-soft/40 px-3 py-1.5">
       {games.map((g) => {
         const count = watcherCounts[g.gameId] ?? 0;
+        const { emoji } = GAME_REGISTRY[g.kind];
         return (
           <button
             key={g.gameId}
@@ -34,7 +36,7 @@ export function LiveGamesBanner({ send }: { send: (type: string, data?: Record<s
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-rose-500" />
             </span>
-            ♟️ {g.whiteName} vs {g.blackName}
+            {emoji} {g.whiteName} vs {g.blackName}
             {count > 0 && (
               <span className="flex items-center gap-0.5 text-muted">
                 <Eye size={10} /> {count}

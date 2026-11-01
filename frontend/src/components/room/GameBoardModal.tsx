@@ -15,10 +15,11 @@ import {
   playWinSound,
   setChessSoundEnabled,
 } from "@/lib/chessSounds";
-import { ChessBoard } from "./ChessBoard";
 import { CelebrationOverlay } from "./CelebrationOverlay";
 import { LeaderboardPanel } from "./LeaderboardPanel";
 import { ShareLinkPanel } from "./ShareLinkPanel";
+import { GAME_REGISTRY } from "@/lib/gameRegistry";
+import { GameKind } from "@/lib/types";
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
 
@@ -82,9 +83,9 @@ export function GameBoardModal({
     }
 
     if (activeGame.moves.length > prev.movesLen) {
-      if (activeGame.lastMoveWasCapture) playCaptureSound();
+      if (activeGame.kind === "chess" && activeGame.lastMoveWasCapture) playCaptureSound();
       else playMoveSound();
-      if (activeGame.inCheck && !activeGame.gameOver) playCheckSound();
+      if (activeGame.kind === "chess" && activeGame.inCheck && !activeGame.gameOver) playCheckSound();
     }
 
     if (activeGame.gameOver && !prev.gameOver) {
@@ -102,6 +103,7 @@ export function GameBoardModal({
   if (mode === "awaiting" && linkWaitingGame) {
     return (
       <AwaitingLinkCard
+        kind={linkWaitingGame.kind}
         linkToken={linkWaitingGame.linkToken}
         myName={myName}
         roomCode={roomCode}
@@ -126,9 +128,8 @@ export function GameBoardModal({
   const isMyTurn = mode === "play" && activeGame.turn === myColor;
   const orientation = myColor ?? "white";
 
-  function handleMove(uci: string) {
-    const [from, to, promotion] = [uci.slice(0, 2), uci.slice(2, 4), uci.slice(4) || undefined];
-    send("game_move", { game_id: activeGame!.gameId, from, to, promotion });
+  function handleMove(move: Record<string, unknown>) {
+    send("game_move", { game_id: activeGame!.gameId, ...move });
   }
 
   function handleResign() {
@@ -137,7 +138,7 @@ export function GameBoardModal({
 
   function handlePlayAgain() {
     if (!opponentId) return;
-    send("challenge_to_chess", { opponent_id: opponentId });
+    send("challenge_game", { opponent_id: opponentId, kind: activeGame!.kind });
     onClose();
   }
 
@@ -185,15 +186,17 @@ export function GameBoardModal({
     };
   })();
 
+  const { arenaTitle, emoji, Board } = GAME_REGISTRY[activeGame.kind];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-[var(--radius-lg)] border border-violet-500/20 bg-gradient-to-b from-[#1b1538] to-[#0d0a1c] text-white shadow-[0_0_60px_rgba(124,58,237,0.25)]">
         {/* Header */}
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-white/5 px-4">
           <div className="flex items-center gap-2">
-            <span className="text-lg">♟️</span>
+            <span className="text-lg">{emoji}</span>
             <h2 className="text-[13px] font-extrabold tracking-wide text-white">
-              CHESS ARENA
+              {arenaTitle}
             </h2>
             {mode === "watch" && (
               <span className="flex items-center gap-1 rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
@@ -254,7 +257,9 @@ export function GameBoardModal({
                 ? "Your move"
                 : `Waiting for ${opponentName}`
               : `${activeGame.turn === "white" ? activeGame.whiteName : activeGame.blackName} to move`}
-          {!activeGame.gameOver && activeGame.inCheck && <span className="ml-1.5 font-bold text-rose-400">· Check!</span>}
+          {!activeGame.gameOver && activeGame.kind === "chess" && activeGame.inCheck && (
+            <span className="ml-1.5 font-bold text-rose-400">· Check!</span>
+          )}
           {watcherCount > 0 && (
             <span className="ml-1.5 inline-flex items-center gap-1 text-white/40">
               · <Eye size={11} /> {watcherCount} watching
@@ -264,13 +269,9 @@ export function GameBoardModal({
 
         {/* Board */}
         <div className="relative flex-1 overflow-y-auto p-4">
-          <ChessBoard
-            boardFen={activeGame.boardFen}
-            myColor={orientation}
-            turn={activeGame.turn}
-            legalMoves={activeGame.legalMoves}
-            lastMove={activeGame.lastMove}
-            inCheck={activeGame.inCheck}
+          <Board
+            game={activeGame}
+            orientation={orientation}
             interactive={mode === "play" && activeGame.status === "active" && isMyTurn}
             onMove={handleMove}
           />
@@ -352,11 +353,13 @@ function PlayerCard({
 }
 
 function AwaitingLinkCard({
+  kind,
   linkToken,
   myName,
   roomCode,
   onCancel,
 }: {
+  kind: GameKind;
   linkToken: string;
   myName: string;
   roomCode: string;
@@ -364,14 +367,15 @@ function AwaitingLinkCard({
 }) {
   const link =
     typeof window !== "undefined" ? `${window.location.origin}/r/${roomCode}?play=${linkToken}` : "";
+  const { arenaTitle, emoji, inviteVerb } = GAME_REGISTRY[kind];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden overflow-y-auto rounded-[var(--radius-lg)] border border-violet-500/20 bg-gradient-to-b from-[#1b1538] to-[#0d0a1c] text-white shadow-[0_0_60px_rgba(124,58,237,0.25)]">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-white/5 px-5">
           <div className="flex items-center gap-2">
-            <span className="text-lg">♟️</span>
-            <h2 className="text-[13px] font-extrabold tracking-wide text-white">CHESS ARENA</h2>
+            <span className="text-lg">{emoji}</span>
+            <h2 className="text-[13px] font-extrabold tracking-wide text-white">{arenaTitle}</h2>
           </div>
           <button
             type="button"
@@ -396,7 +400,7 @@ function AwaitingLinkCard({
 
           <ShareLinkPanel
             link={link}
-            shareText={`${myName} invites you to play chess on Openhouse! Join here:`}
+            shareText={`${myName} invites you to ${inviteVerb} on Openhouse! Join here:`}
             dark
           />
 

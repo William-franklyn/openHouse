@@ -336,7 +336,7 @@ export interface WSPhotoShared {
 // per room at a time (enforced server-side) - the frontend only ever
 // needs a single myGameId slot, same shape as myCallId. ----
 
-export type GameKind = "chess";
+export type GameKind = "chess" | "tictactoe" | "connect4";
 export type GameStatus = "pending" | "awaiting" | "active" | "finished";
 export type GameResult = "white" | "black" | "draw";
 
@@ -371,26 +371,42 @@ export interface WSGameCancelled {
   game_id: string;
 }
 
-export interface WSGameState {
+interface WSGameStateBase {
   type: "game_state";
   game_id: string;
-  kind: GameKind;
   status: GameStatus;
   white_member_id: string;
   white_name: string;
   black_member_id: string;
   black_name: string;
-  moves: string[];
-  board_fen: string;
+  moves: unknown[];
   turn: "white" | "black";
-  legal_moves: string[];
-  in_check: boolean;
-  last_move_was_capture: boolean;
   game_over: boolean;
   result: GameResult | null;
   termination: string | null;
-  last_move: string | null;
+  last_move: unknown | null;
 }
+
+export interface WSChessState extends WSGameStateBase {
+  kind: "chess";
+  board_fen: string;
+  legal_moves: string[];
+  in_check: boolean;
+  last_move_was_capture: boolean;
+}
+
+export interface WSTicTacToeState extends WSGameStateBase {
+  kind: "tictactoe";
+  board: (0 | 1 | null)[];
+}
+
+export interface WSConnect4State extends WSGameStateBase {
+  kind: "connect4";
+  board: (0 | 1 | null)[][];
+  legal_moves: { column: number }[];
+}
+
+export type WSGameState = WSChessState | WSTicTacToeState | WSConnect4State;
 
 // A lightweight room-wide "X vs Y is live" announcement - no board state,
 // just enough for a non-player's banner. watch_game is what actually

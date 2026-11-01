@@ -1,32 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ChessKnight,
-  Circle,
-  Hash,
-  Grid3x3,
-  Type,
-  Brain,
-  Hand,
-  Target,
-  Dices,
-  Spade,
-} from "lucide-react";
+import { Circle, Type, Brain, Hand, Target, Dices, Spade, LucideIcon } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { GAME_REGISTRY } from "@/lib/gameRegistry";
+import { GameKind } from "@/lib/types";
 
 interface GameOption {
   id: string;
   name: string;
-  icon: typeof ChessKnight;
+  icon: LucideIcon;
   live: boolean;
 }
 
-const GAMES: GameOption[] = [
-  { id: "chess", name: "Chess", icon: ChessKnight, live: true },
+const LIVE_GAMES: GameOption[] = Object.values(GAME_REGISTRY).map((entry) => ({
+  id: entry.kind,
+  name: entry.label,
+  icon: entry.icon,
+  live: true,
+}));
+
+// Still-unbuilt games stay as "coming soon" placeholders here - once one
+// goes live, moving it into GAME_REGISTRY (gameRegistry.ts) is the only
+// change needed for it to show up above instead of here.
+const COMING_SOON: GameOption[] = [
   { id: "checkers", name: "Checkers", icon: Circle, live: false },
-  { id: "tictactoe", name: "Tic-Tac-Toe", icon: Hash, live: false },
-  { id: "connect4", name: "Connect Four", icon: Grid3x3, live: false },
   { id: "wordguess", name: "Word Guess", icon: Type, live: false },
   { id: "trivia", name: "Trivia Night", icon: Brain, live: false },
   { id: "rps", name: "Rock Paper Scissors", icon: Hand, live: false },
@@ -35,14 +33,16 @@ const GAMES: GameOption[] = [
   { id: "cards", name: "Card Game", icon: Spade, live: false },
 ];
 
+const GAMES: GameOption[] = [...LIVE_GAMES, ...COMING_SOON];
+
 export function GamesModal({
   open,
   onClose,
-  onPickChess,
+  onPick,
 }: {
   open: boolean;
   onClose: () => void;
-  onPickChess: () => void;
+  onPick: (kind: GameKind) => void;
 }) {
   const [toast, setToast] = useState<string | null>(null);
 
@@ -53,7 +53,7 @@ export function GamesModal({
       return;
     }
     onClose();
-    onPickChess();
+    onPick(game.id as GameKind);
   }
 
   return (

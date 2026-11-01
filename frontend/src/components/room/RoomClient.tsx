@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { clearSession, loadSession, StoredSession } from "@/lib/session";
 import { useRoomStore } from "@/lib/store";
 import { useRoomSocket } from "@/lib/useRoomSocket";
-import { ApiError, RoomPublic } from "@/lib/types";
+import { ApiError, GameKind, RoomPublic } from "@/lib/types";
 import { RoomSidebar } from "./RoomSidebar";
 import { ConversationHeader } from "./ConversationHeader";
 import { PinnedBanner } from "./PinnedBanner";
@@ -50,7 +50,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [showStartCall, setShowStartCall] = useState(false);
   const [showPhotoWall, setShowPhotoWall] = useState(false);
   const [showGamesModal, setShowGamesModal] = useState(false);
-  const [showStartGame, setShowStartGame] = useState(false);
+  const [startGameKind, setStartGameKind] = useState<GameKind | null>(null);
   const [showGameBoard, setShowGameBoard] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ memberId?: string; messageId?: string } | null>(null);
 
@@ -320,15 +320,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
       <GamesModal
         open={showGamesModal}
         onClose={() => setShowGamesModal(false)}
-        onPickChess={() => setShowStartGame(true)}
+        onPick={(kind) => setStartGameKind(kind)}
       />
-      {myMemberId && (
+      {myMemberId && startGameKind && (
         <StartGameModal
-          open={showStartGame}
-          onClose={() => setShowStartGame(false)}
+          open
+          kind={startGameKind}
+          onClose={() => setStartGameKind(null)}
           myMemberId={myMemberId}
-          onChallenge={(opponentId) => send("challenge_to_chess", { opponent_id: opponentId })}
-          onInviteLink={() => send("create_game_link")}
+          onChallenge={(opponentId) => send("challenge_game", { opponent_id: opponentId, kind: startGameKind })}
+          onInviteLink={() => send("create_game_link", { kind: startGameKind })}
         />
       )}
       {myMemberId && (
