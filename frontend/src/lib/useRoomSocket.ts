@@ -202,8 +202,37 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           };
         } else if (event.kind === "tictactoe") {
           gameState = { ...base, kind: "tictactoe", board: event.board };
-        } else {
+        } else if (event.kind === "connect4") {
           gameState = { ...base, kind: "connect4", board: event.board, legalMoves: event.legal_moves };
+        } else if (event.kind === "dots_and_boxes") {
+          gameState = {
+            ...base,
+            kind: "dots_and_boxes",
+            hEdges: event.h_edges,
+            vEdges: event.v_edges,
+            boxes: event.boxes,
+          };
+        } else if (event.kind === "reversi") {
+          gameState = { ...base, kind: "reversi", board: event.board, legalMoves: event.legal_moves };
+        } else if (event.kind === "checkers") {
+          gameState = {
+            ...base,
+            kind: "checkers",
+            board: event.board,
+            mustContinueFrom: event.must_continue_from,
+            legalMoves: event.legal_moves,
+          };
+        } else {
+          gameState = {
+            ...base,
+            kind: "backgammon",
+            points: event.points,
+            bar: event.bar as [number, number],
+            borneOff: event.borne_off as [number, number],
+            dice: event.dice,
+            remainingDice: event.remaining_dice,
+            legalMoves: event.legal_moves,
+          };
         }
         const amPlayer =
           event.white_member_id === store.myMemberId || event.black_member_id === store.myMemberId;

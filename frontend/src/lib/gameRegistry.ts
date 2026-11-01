@@ -1,9 +1,13 @@
-import { ChessKnight, Grid3x3, Hash, LucideIcon } from "lucide-react";
+import { Circle, ChessKnight, Grid3x3, Hash, LucideIcon, Square, Dice5 } from "lucide-react";
 import { GameKind } from "./types";
 import { GameState } from "./store";
 import { ChessBoardAdapter } from "@/components/room/ChessBoardAdapter";
 import { TicTacToeBoard } from "@/components/room/TicTacToeBoard";
 import { Connect4Board } from "@/components/room/Connect4Board";
+import { DotsAndBoxesBoard } from "@/components/room/DotsAndBoxesBoard";
+import { ReversiBoard } from "@/components/room/ReversiBoard";
+import { CheckersBoard } from "@/components/room/CheckersBoard";
+import { BackgammonBoard } from "@/components/room/BackgammonBoard";
 
 export interface GameBoardProps<K extends GameState["kind"] = GameState["kind"]> {
   game: Extract<GameState, { kind: K }>;
@@ -56,5 +60,41 @@ export const GAME_REGISTRY: Record<GameKind, GameRegistryEntry> = {
     emoji: "🔴",
     inviteVerb: "play Connect Four",
     Board: Connect4Board,
+  },
+  dots_and_boxes: {
+    kind: "dots_and_boxes",
+    label: "Dots and Boxes",
+    icon: Square,
+    arenaTitle: "DOTS AND BOXES ARENA",
+    emoji: "🟦",
+    inviteVerb: "play Dots and Boxes",
+    Board: DotsAndBoxesBoard,
+  },
+  reversi: {
+    kind: "reversi",
+    label: "Reversi",
+    icon: Circle,
+    arenaTitle: "REVERSI ARENA",
+    emoji: "⚫",
+    inviteVerb: "play Reversi",
+    Board: ReversiBoard,
+  },
+  checkers: {
+    kind: "checkers",
+    label: "Checkers",
+    icon: Circle,
+    arenaTitle: "CHECKERS ARENA",
+    emoji: "🔴",
+    inviteVerb: "play checkers",
+    Board: CheckersBoard,
+  },
+  backgammon: {
+    kind: "backgammon",
+    label: "Backgammon",
+    icon: Dice5,
+    arenaTitle: "BACKGAMMON ARENA",
+    emoji: "🎲",
+    inviteVerb: "play backgammon",
+    Board: BackgammonBoard,
   },
 };

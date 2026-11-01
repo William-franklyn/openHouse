@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Circle, Type, Brain, Hand, Target, Dices, Spade, LucideIcon } from "lucide-react";
+import { Type, Brain, Hand, Target, Dices, Spade, LucideIcon } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { GAME_REGISTRY } from "@/lib/gameRegistry";
 import { GameKind } from "@/lib/types";
@@ -24,7 +24,6 @@ const LIVE_GAMES: GameOption[] = Object.values(GAME_REGISTRY).map((entry) => ({
 // goes live, moving it into GAME_REGISTRY (gameRegistry.ts) is the only
 // change needed for it to show up above instead of here.
 const COMING_SOON: GameOption[] = [
-  { id: "checkers", name: "Checkers", icon: Circle, live: false },
   { id: "wordguess", name: "Word Guess", icon: Type, live: false },
   { id: "trivia", name: "Trivia Night", icon: Brain, live: false },
   { id: "rps", name: "Rock Paper Scissors", icon: Hand, live: false },

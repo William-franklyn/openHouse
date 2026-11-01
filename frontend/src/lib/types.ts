@@ -336,7 +336,14 @@ export interface WSPhotoShared {
 // per room at a time (enforced server-side) - the frontend only ever
 // needs a single myGameId slot, same shape as myCallId. ----
 
-export type GameKind = "chess" | "tictactoe" | "connect4";
+export type GameKind =
+  | "chess"
+  | "tictactoe"
+  | "connect4"
+  | "dots_and_boxes"
+  | "reversi"
+  | "checkers"
+  | "backgammon";
 export type GameStatus = "pending" | "awaiting" | "active" | "finished";
 export type GameResult = "white" | "black" | "draw";
 
@@ -406,7 +413,44 @@ export interface WSConnect4State extends WSGameStateBase {
   legal_moves: { column: number }[];
 }
 
-export type WSGameState = WSChessState | WSTicTacToeState | WSConnect4State;
+export interface WSDotsAndBoxesState extends WSGameStateBase {
+  kind: "dots_and_boxes";
+  h_edges: boolean[][];
+  v_edges: boolean[][];
+  boxes: (0 | 1 | null)[][];
+}
+
+export interface WSReversiState extends WSGameStateBase {
+  kind: "reversi";
+  board: (0 | 1 | null)[][];
+  legal_moves: { row: number; col: number }[];
+}
+
+export interface WSCheckersState extends WSGameStateBase {
+  kind: "checkers";
+  board: (string | null)[][];
+  must_continue_from: [number, number] | null;
+  legal_moves: { from: [number, number]; to: [number, number] }[];
+}
+
+export interface WSBackgammonState extends WSGameStateBase {
+  kind: "backgammon";
+  points: number[];
+  bar: [number, number];
+  borne_off: [number, number];
+  dice: number[];
+  remaining_dice: number[];
+  legal_moves: { from: number; to: number }[];
+}
+
+export type WSGameState =
+  | WSChessState
+  | WSTicTacToeState
+  | WSConnect4State
+  | WSDotsAndBoxesState
+  | WSReversiState
+  | WSCheckersState
+  | WSBackgammonState;
 
 // A lightweight room-wide "X vs Y is live" announcement - no board state,
 // just enough for a non-player's banner. watch_game is what actually

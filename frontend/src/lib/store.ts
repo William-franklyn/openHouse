@@ -58,7 +58,44 @@ export interface Connect4GameState extends GameStateBase {
   legalMoves: { column: number }[];
 }
 
-export type GameState = ChessGameState | TicTacToeGameState | Connect4GameState;
+export interface DotsAndBoxesGameState extends GameStateBase {
+  kind: "dots_and_boxes";
+  hEdges: boolean[][];
+  vEdges: boolean[][];
+  boxes: (0 | 1 | null)[][];
+}
+
+export interface ReversiGameState extends GameStateBase {
+  kind: "reversi";
+  board: (0 | 1 | null)[][];
+  legalMoves: { row: number; col: number }[];
+}
+
+export interface CheckersGameState extends GameStateBase {
+  kind: "checkers";
+  board: (string | null)[][];
+  mustContinueFrom: [number, number] | null;
+  legalMoves: { from: [number, number]; to: [number, number] }[];
+}
+
+export interface BackgammonGameState extends GameStateBase {
+  kind: "backgammon";
+  points: number[];
+  bar: [number, number];
+  borneOff: [number, number];
+  dice: number[];
+  remainingDice: number[];
+  legalMoves: { from: number; to: number }[];
+}
+
+export type GameState =
+  | ChessGameState
+  | TicTacToeGameState
+  | Connect4GameState
+  | DotsAndBoxesGameState
+  | ReversiGameState
+  | CheckersGameState
+  | BackgammonGameState;
 
 // A room-wide "live now" banner entry - lighter than GameState (no board),
 // for games this member isn't playing in. Clicking one sends watch_game,
