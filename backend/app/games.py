@@ -37,6 +37,20 @@ def _load_state(game: Game, engine: GameEngine):
     return json.loads(game.state_json)
 
 
+def _activate(game: Game) -> None:
+    """Called exactly once, the moment a game's status flips to "active".
+    For a REPLAY_FROM_LOG=False engine, initial_state() is persisted here
+    rather than left to be lazily computed by the next _load_state() call
+    - most engines' initial_state() is a pure function of nothing, so
+    calling it twice would be harmless, but an engine whose initial_state
+    has a real side effect (backgammon's opening dice roll) must only
+    ever be called once, or the dice shown in that first broadcast
+    silently stop matching what's actually validated on the first move."""
+    engine = get_engine(game.kind)
+    if not engine.REPLAY_FROM_LOG:
+        game.state_json = json.dumps(engine.initial_state())
+
+
 async def get_live_game_for_member(session, room_id: str, member_id: str) -> Game | None:
     """The one pending/awaiting/active game this member is currently part
     of in this room, if any. Used both to block starting a second one
@@ -133,6 +147,7 @@ async def claim_link_challenge(session, room, game: Game, claimant: Member) -> t
 
     game.black_member_id = claimant.id
     game.status = "active"
+    _activate(game)
     game.updated_at = utcnow()
     await session.commit()
     return game, True
@@ -151,6 +166,7 @@ async def accept_challenge(session, game: Game, actor: Member) -> Game:
     if actor.id != game.black_member_id:
         raise DomainError("not_allowed", "That challenge wasn't sent to you.")
     game.status = "active"
+    _activate(game)
     game.updated_at = utcnow()
     await session.commit()
     return game
