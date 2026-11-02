@@ -1,5 +1,6 @@
 from app.errors import DomainError
 from app.party_engines.base import PartyEngine
+from app.party_engines.buzzer_engine import BuzzerEngine
 from app.party_engines.codenames_engine import CodenamesEngine
 from app.party_engines.draft_engine import DraftEngine
 from app.party_engines.hearts_engine import HeartsEngine
@@ -16,6 +17,7 @@ PARTY_ENGINES: dict[str, PartyEngine] = {
     "hearts": HeartsEngine(),
     "werewolf": WerewolfEngine(),
     "spades": SpadesEngine(),
+    "buzzer": BuzzerEngine(),
 }
 
 
