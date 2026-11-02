@@ -372,6 +372,11 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           spadesWinner: null,
           handResults: null,
           spadesLastEvent: null,
+          questionNumber: null,
+          numQuestions: null,
+          lockedOut: null,
+          buzzedMemberId: null,
+          buzzerLastEvent: null,
         };
         if (event.kind === "trivia" && event.phase === "question") {
           store.setPartyGame({
@@ -527,6 +532,20 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             spadesWinner: event.winner,
             handResults: event.phase === "hand_over" ? event.hand_results : null,
             spadesLastEvent: event.phase === "reveal" || event.phase === "hand_over" ? event.last_event : null,
+          });
+        } else if (
+          event.kind === "buzzer" &&
+          (event.phase === "buzzing" || event.phase === "answering" || event.phase === "reveal")
+        ) {
+          store.setPartyGame({
+            ...base,
+            ...empty,
+            question: event.question,
+            questionNumber: event.question_number,
+            numQuestions: event.num_questions,
+            lockedOut: event.locked_out,
+            buzzedMemberId: event.buzzed_member_id,
+            buzzerLastEvent: event.phase === "reveal" ? event.last_event : null,
           });
         } else {
           // Lobby - shared shape across every party-game kind.

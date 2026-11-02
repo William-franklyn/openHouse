@@ -7,6 +7,7 @@ import { CountdownBar } from "@/components/ui/CountdownBar";
 import { useRoomStore } from "@/lib/store";
 import { PARTY_GAME_REGISTRY } from "@/lib/partyGameRegistry";
 import {
+  BuzzerLastEvent,
   CodenamesLastEvent,
   CodenamesTeam,
   CodenamesTeamRoster,
@@ -100,6 +101,14 @@ export function PartyGameModal({
 
   function handleSpadesPlay(cardId: string) {
     send("party_action", { party_game_id: game!.partyGameId, action: "play_card", card_id: cardId });
+  }
+
+  function handleBuzzerBuzz() {
+    send("party_action", { party_game_id: game!.partyGameId, action: "buzz" });
+  }
+
+  function handleBuzzerAnswer(choiceIndex: number) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "answer", choice_index: choiceIndex });
   }
 
   function handleJoin() {
@@ -284,11 +293,29 @@ export function PartyGameModal({
             <SpadesFinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
 
+          {game.status === "active" &&
+            game.kind === "buzzer" &&
+            (game.phase === "buzzing" || game.phase === "answering" || game.phase === "reveal") && (
+              <BuzzerView
+                game={game}
+                myMemberId={myMemberId}
+                isHost={isHost}
+                onBuzz={handleBuzzerBuzz}
+                onAnswer={handleBuzzerAnswer}
+                onSkip={handleSkip}
+              />
+            )}
+
+          {game.status === "finished" && game.kind === "buzzer" && (
+            <FinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
+          )}
+
           {game.status === "finished" &&
             game.kind !== "codenames" &&
             game.kind !== "hearts" &&
             game.kind !== "werewolf" &&
-            game.kind !== "spades" && (
+            game.kind !== "spades" &&
+            game.kind !== "buzzer" && (
             <FinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
         </div>
@@ -1622,6 +1649,146 @@ function HeartsFinalView({
           Play Again
         </button>
       </div>
+    </div>
+  );
+}
+
+function buzzerEventText(event: BuzzerLastEvent, namesByMemberId: Record<string, string>): string {
+  const name = event.member_id ? (namesByMemberId[event.member_id] ?? "Someone") : "Someone";
+  switch (event.kind) {
+    case "buzzed":
+      return `${name} buzzed in!`;
+    case "correct":
+      return `${name} got it right!`;
+    case "wrong":
+      return `${name} got it wrong - up for grabs again!`;
+    case "unsolved":
+      return "Nobody got it in time.";
+    default:
+      return "";
+  }
+}
+
+function BuzzerView({
+  game,
+  myMemberId,
+  isHost,
+  onBuzz,
+  onAnswer,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onBuzz: () => void;
+  onAnswer: (choiceIndex: number) => void;
+  onSkip: () => void;
+}) {
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const question = game.question;
+  const isReveal = game.phase === "reveal";
+  const revealedQuestion = isReveal && question && "correct_index" in question ? question : null;
+  const amLockedOut = (game.lockedOut ?? []).includes(myMemberId);
+  const amBuzzer = game.buzzedMemberId === myMemberId;
+  const buzzerName = game.buzzedMemberId ? (namesByMemberId[game.buzzedMemberId] ?? "Someone") : null;
+
+  if (!question) return null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+        Question {game.questionNumber} of {game.numQuestions} · {question.category}
+      </p>
+      <p className="text-center text-[16px] font-bold text-white">{question.question}</p>
+
+      {isReveal && game.buzzerLastEvent && (
+        <div
+          data-testid="buzzer-last-event"
+          className="rounded-[var(--radius-md)] border border-emerald-400/30 bg-emerald-500/10 p-2.5 text-center text-[12px] text-emerald-200"
+        >
+          {buzzerEventText(game.buzzerLastEvent, namesByMemberId)}
+        </div>
+      )}
+
+      {game.phase === "buzzing" && (
+        <div className="flex flex-col items-center gap-2">
+          {amLockedOut ? (
+            <p className="text-center text-[12px] text-white/50">You're locked out for this question.</p>
+          ) : (
+            <button
+              type="button"
+              onClick={onBuzz}
+              data-testid="buzzer-buzz-button"
+              className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-amber-500 text-[13px] font-extrabold text-white shadow-[0_0_30px_rgba(244,63,94,0.5)] transition-transform hover:scale-110 active:scale-95"
+            >
+              BUZZ!
+            </button>
+          )}
+        </div>
+      )}
+
+      {game.phase === "answering" && (
+        <>
+          <p className="text-center text-[13px] font-semibold text-white">
+            {amBuzzer ? "You buzzed in - answer now!" : `${buzzerName} buzzed in...`}
+          </p>
+          {amBuzzer && (
+            <div className="grid grid-cols-1 gap-2" data-testid="buzzer-choice-grid">
+              {question.choices.map((choice, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onAnswer(i)}
+                  data-testid={`buzzer-choice-${i}`}
+                  className="rounded-[var(--radius-md)] border border-white/10 bg-white/5 px-3 py-2.5 text-left text-[13px] font-medium text-white/80 hover:border-violet-400 hover:bg-violet-500/10"
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {isReveal && revealedQuestion && (
+        <div className="grid grid-cols-1 gap-2">
+          {revealedQuestion.choices.map((choice, i) => {
+            const isCorrect = i === revealedQuestion.correct_index;
+            return (
+              <div
+                key={i}
+                className={`rounded-[var(--radius-md)] border px-3 py-2.5 text-[13px] font-medium ${
+                  isCorrect ? "border-emerald-400 bg-emerald-500/20 text-white" : "border-white/10 bg-white/5 text-white/50"
+                }`}
+              >
+                {choice}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {(game.lockedOut ?? []).length > 0 && (
+        <div className="flex flex-wrap justify-center gap-1.5 text-[11px] text-white/40">
+          {(game.lockedOut ?? []).map((memberId) => (
+            <span key={memberId} className="rounded-full border border-white/10 px-2 py-0.5">
+              {namesByMemberId[memberId] ?? "Someone"} locked out
+            </span>
+          ))}
+        </div>
+      )}
+
+      <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
+      {isHost && !isReveal && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip
+        </button>
+      )}
     </div>
   );
 }

@@ -511,7 +511,7 @@ export interface LeaderboardResponse {
 // genuinely separate type, not a GameKind. One live party game per room
 // at a time (enforced server-side). ----
 
-export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames" | "hearts" | "werewolf" | "spades";
+export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames" | "hearts" | "werewolf" | "spades" | "buzzer";
 export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
 export type PartyRoundPhase =
   | "lobby"
@@ -527,7 +527,9 @@ export type PartyRoundPhase =
   | "trick"
   | "night_actions"
   | "day_vote"
-  | "bidding";
+  | "bidding"
+  | "buzzing"
+  | "answering";
 
 export interface PartyScoreRow {
   member_id: string;
@@ -947,6 +949,51 @@ export interface WSSpadesHandOverState extends WSSpadesStateBase {
   last_event: SpadesLastEvent;
 }
 
+// ---- Buzzer Race: first valid action wins, not "everyone acts"
+// (Trivia) or "one designated actor acts" (Uno) - a "buzzing" round
+// accepts the FIRST buzz from any not-locked-out participant and
+// rejects every submission after it; a wrong (or un-answered) buzz
+// locks that player out of the current question and reopens buzzing
+// for whoever's left. See buzzer_engine.py. ----
+
+export interface BuzzerLastEvent {
+  kind: "buzzed" | "correct" | "wrong" | "unsolved";
+  member_id?: string;
+  choice_index?: number;
+  correct_index?: number | null;
+}
+
+interface WSBuzzerStateBase extends WSPartyStateBase {
+  kind: "buzzer";
+  question_number: number;
+  num_questions: number;
+  locked_out: string[];
+  buzzed_member_id: string | null;
+}
+
+export interface WSBuzzerBuzzingState extends WSBuzzerStateBase {
+  phase: "buzzing";
+  question: TriviaQuestionPublic;
+  last_event: null;
+}
+
+export interface WSBuzzerAnsweringState extends WSBuzzerStateBase {
+  phase: "answering";
+  question: TriviaQuestionPublic;
+  last_event: null;
+}
+
+export interface WSBuzzerRevealState extends WSBuzzerStateBase {
+  phase: "reveal";
+  // Only revealed (carries correct_index) once the question is truly
+  // settled (a correct answer, or everyone locked out) - still redacted
+  // right after a bare "buzzed" or a "wrong" event, since the question
+  // may still be live for the next buzzer. Check at runtime the same
+  // way Trivia's own reveal view already does ("correct_index" in question).
+  question: TriviaQuestionPublic | TriviaQuestionRevealed;
+  last_event: BuzzerLastEvent;
+}
+
 export type WSPartyState =
   | WSPartyLobbyState
   | WSTriviaQuestionState
@@ -970,7 +1017,10 @@ export type WSPartyState =
   | WSSpadesBiddingState
   | WSSpadesTrickState
   | WSSpadesRevealState
-  | WSSpadesHandOverState;
+  | WSSpadesHandOverState
+  | WSBuzzerBuzzingState
+  | WSBuzzerAnsweringState
+  | WSBuzzerRevealState;
 
 export interface WSPartyCancelled {
   type: "party_cancelled";

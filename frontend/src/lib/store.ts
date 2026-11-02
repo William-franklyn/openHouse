@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   BattleshipCell,
+  BuzzerLastEvent,
   CallSignalEvent,
   CardGameKind,
   CardGameStatus,
@@ -255,6 +256,13 @@ export interface PartyGameState {
   spadesWinner: SpadesTeam | null;
   handResults: Record<SpadesTeam, SpadesHandResult> | null;
   spadesLastEvent: SpadesLastEvent | null;
+  // Buzzer Race fields - "question" is reused as-is from Trivia above
+  // (identical TriviaQuestionPublic/Revealed shape).
+  questionNumber: number | null;
+  numQuestions: number | null;
+  lockedOut: string[] | null;
+  buzzedMemberId: string | null;
+  buzzerLastEvent: BuzzerLastEvent | null;
 }
 
 // Card games (poker, the first) - a seated table whose chip stacks

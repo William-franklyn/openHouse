@@ -1,4 +1,4 @@
-import { Brain, Heart, LayoutGrid, LucideIcon, Moon, Shuffle, Spade, Users } from "lucide-react";
+import { Bell, Brain, Heart, LayoutGrid, LucideIcon, Moon, Shuffle, Spade, Users } from "lucide-react";
 import { PartyGameKind } from "./types";
 
 export interface PartyGameRegistryEntry {
@@ -61,5 +61,12 @@ export const PARTY_GAME_REGISTRY: Record<PartyGameKind, PartyGameRegistryEntry> 
     icon: Users,
     emoji: "♠️",
     minParticipants: 4,
+  },
+  buzzer: {
+    kind: "buzzer",
+    label: "Buzzer Race",
+    icon: Bell,
+    emoji: "🔔",
+    minParticipants: 2,
   },
 };
