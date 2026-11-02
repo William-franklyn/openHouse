@@ -15,9 +15,6 @@ from app.models import Member, PartyGame, new_id, utcnow
 from app.party_engines import get_party_engine
 from app.party_engines.base import IllegalAction
 
-DEFAULT_TOTAL_ROUNDS = 8
-
-
 async def get_live_party_game_for_room(session, room_id: str) -> PartyGame | None:
     result = await session.execute(
         select(PartyGame).where(PartyGame.room_id == room_id, PartyGame.status.in_(("lobby", "active")))
@@ -25,10 +22,12 @@ async def get_live_party_game_for_room(session, room_id: str) -> PartyGame | Non
     return result.scalars().first()
 
 
-async def create_lobby(session, room, host: Member, kind: str = "trivia", total_rounds: int = DEFAULT_TOTAL_ROUNDS) -> PartyGame:
-    get_party_engine(kind)  # fail fast on an unknown kind, before touching the DB
+async def create_lobby(session, room, host: Member, kind: str = "trivia", total_rounds: int | None = None) -> PartyGame:
+    engine = get_party_engine(kind)  # fail fast on an unknown kind, before touching the DB
     if await get_live_party_game_for_room(session, room.id) is not None:
         raise DomainError("game_in_progress", "A party game is already happening in this room.")
+    if total_rounds is None:
+        total_rounds = engine.DEFAULT_TOTAL_ROUNDS
 
     party_game = PartyGame(
         id=new_id(),
@@ -199,7 +198,7 @@ async def build_state_event(session, party_game: PartyGame, viewer_member_id: st
     participants = json.loads(party_game.participants_json)
 
     if party_game.status == "lobby":
-        display = {"phase": "lobby", "question": None}
+        display = {"phase": "lobby"}
         rows = []
         for member_id in participants:
             member = await session.get(Member, member_id)

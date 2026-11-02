@@ -36,6 +36,7 @@ def _points_for(answered_at_ms: int, started_at_ms: int, deadline_ms: int) -> in
 class TriviaEngine:
     kind = "trivia"
     MIN_PARTICIPANTS = 2
+    DEFAULT_TOTAL_ROUNDS = 8
 
     def initial_state(self, participant_ids: list[str]) -> dict:
         return {

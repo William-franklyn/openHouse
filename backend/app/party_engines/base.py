@@ -44,6 +44,16 @@ class PartyEngine(Protocol):
     # "pick at least one invitee" floor. No GameEngine equivalent exists
     # (2-seat games always have exactly 2 by construction).
     MIN_PARTICIPANTS: int
+    # How many "rounds" (in whatever unit this engine calls a round - for
+    # Trivia that's literally one question each; for Draft, see
+    # draft_engine.py, it's one pick) a fresh game runs for by default.
+    # Not a free lobby-time choice the way Trivia's total_rounds param
+    # could theoretically be, since some engines' round count is locked
+    # to their own fixed structure (Draft's is hand_size * num_scoring_
+    # rounds - cutting it short mid-structure would leave an un-scored
+    # partial round) - party_games.create_lobby falls back to this
+    # whenever the caller doesn't pass an explicit override.
+    DEFAULT_TOTAL_ROUNDS: int
 
     def initial_state(self, participant_ids: list[str]) -> Any:
         """Fresh pre-round-0 state the instant the roster locks. Takes
