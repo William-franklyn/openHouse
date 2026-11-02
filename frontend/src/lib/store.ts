@@ -35,6 +35,9 @@ import {
   UnoColor,
   UnoHandResult,
   UnoLastAction,
+  WerewolfLastEvent,
+  WerewolfRole,
+  WerewolfWinner,
 } from "./types";
 
 export interface IncomingCallInvite {
@@ -220,6 +223,16 @@ export interface PartyGameState {
   heartsWinner: string | null;
   handPoints: Record<string, number> | null;
   heartsLastEvent: HeartsLastEvent | null;
+  // Werewolf fields.
+  nightNumber: number | null;
+  werewolfMyRole: WerewolfRole | null;
+  alive: Record<string, boolean> | null;
+  werewolfTeam: string[] | null;
+  mySeerKnowledge: Record<string, WerewolfRole> | null;
+  allRoles: Record<string, WerewolfRole> | null;
+  needAction: boolean | null;
+  werewolfWinner: WerewolfWinner | null;
+  werewolfLastEvent: WerewolfLastEvent | null;
 }
 
 // Card games (poker, the first) - a seated table whose chip stacks

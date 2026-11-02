@@ -511,7 +511,7 @@ export interface LeaderboardResponse {
 // genuinely separate type, not a GameKind. One live party game per room
 // at a time (enforced server-side). ----
 
-export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames" | "hearts";
+export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames" | "hearts" | "werewolf";
 export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
 export type PartyRoundPhase =
   | "lobby"
@@ -524,7 +524,9 @@ export type PartyRoundPhase =
   | "clue"
   | "guessing"
   | "passing"
-  | "trick";
+  | "trick"
+  | "night_actions"
+  | "day_vote";
 
 export interface PartyScoreRow {
   member_id: string;
@@ -821,6 +823,50 @@ export interface WSHeartsHandOverState extends WSHeartsStateBase {
   last_event: HeartsLastEvent;
 }
 
+// ---- Werewolf: N players, secretly assigned roles, alternating night
+// (hidden role actions) and day (open lynch vote) phases. Each night or
+// day is ONE round - a simultaneous-but-role-scoped action set (only
+// living werewolves + the living doctor + the living seer owe a night
+// submission; everyone living owes a day vote). See werewolf_engine.py. ----
+
+export type WerewolfRole = "werewolf" | "doctor" | "seer" | "villager";
+export type WerewolfWinner = "werewolves" | "villagers";
+
+export interface WerewolfLastEvent {
+  kind: "night_result" | "day_result";
+  night_number?: number;
+  died_member_id?: string | null;
+  lynched_member_id?: string | null;
+  votes?: Record<string, string>;
+}
+
+interface WSWerewolfStateBase extends WSPartyStateBase {
+  kind: "werewolf";
+  night_number: number;
+  my_role: WerewolfRole | null;
+  alive: Record<string, boolean>;
+  werewolf_team: string[] | null;
+  my_seer_knowledge: Record<string, WerewolfRole> | null;
+  all_roles: Record<string, WerewolfRole> | null;
+  need_action: boolean;
+  winner: WerewolfWinner | null;
+}
+
+export interface WSWerewolfNightState extends WSWerewolfStateBase {
+  phase: "night_actions";
+  last_event: null;
+}
+
+export interface WSWerewolfDayState extends WSWerewolfStateBase {
+  phase: "day_vote";
+  last_event: null;
+}
+
+export interface WSWerewolfRevealState extends WSWerewolfStateBase {
+  phase: "reveal";
+  last_event: WerewolfLastEvent;
+}
+
 export type WSPartyState =
   | WSPartyLobbyState
   | WSTriviaQuestionState
@@ -837,7 +883,10 @@ export type WSPartyState =
   | WSHeartsPassingState
   | WSHeartsTrickState
   | WSHeartsRevealState
-  | WSHeartsHandOverState;
+  | WSHeartsHandOverState
+  | WSWerewolfNightState
+  | WSWerewolfDayState
+  | WSWerewolfRevealState;
 
 export interface WSPartyCancelled {
   type: "party_cancelled";

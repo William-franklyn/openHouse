@@ -16,6 +16,8 @@ import {
   HeartsSuit,
   UnoCard,
   UnoColor,
+  WerewolfLastEvent,
+  WerewolfRole,
 } from "@/lib/types";
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
@@ -79,6 +81,14 @@ export function PartyGameModal({
 
   function handleHeartsPlay(cardId: string) {
     send("party_action", { party_game_id: game!.partyGameId, action: "play_card", card_id: cardId });
+  }
+
+  function handleWerewolfNightAction(actionKind: "wolf_vote" | "doctor_save" | "seer_inspect", targetId: string) {
+    send("party_action", { party_game_id: game!.partyGameId, action: actionKind, target_id: targetId });
+  }
+
+  function handleWerewolfDayVote(targetId: string) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "day_vote", target_id: targetId });
   }
 
   function handleJoin() {
@@ -217,7 +227,38 @@ export function PartyGameModal({
             <HeartsFinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
 
-          {game.status === "finished" && game.kind !== "codenames" && game.kind !== "hearts" && (
+          {game.status === "active" &&
+            game.kind === "werewolf" &&
+            (game.phase === "night_actions" || game.phase === "reveal") && (
+              <WerewolfNightView
+                game={game}
+                myMemberId={myMemberId}
+                isHost={isHost}
+                onAct={handleWerewolfNightAction}
+                onSkip={handleSkip}
+              />
+            )}
+
+          {game.status === "active" &&
+            game.kind === "werewolf" &&
+            game.phase === "day_vote" && (
+              <WerewolfDayView
+                game={game}
+                myMemberId={myMemberId}
+                isHost={isHost}
+                onVote={handleWerewolfDayVote}
+                onSkip={handleSkip}
+              />
+            )}
+
+          {game.status === "finished" && game.kind === "werewolf" && (
+            <WerewolfFinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
+          )}
+
+          {game.status === "finished" &&
+            game.kind !== "codenames" &&
+            game.kind !== "hearts" &&
+            game.kind !== "werewolf" && (
             <FinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
         </div>
@@ -1534,6 +1575,297 @@ function HeartsFinalView({
         </p>
       )}
       <HeartsStandings game={game} myMemberId={myMemberId} />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-white/15 px-5 py-2.5 text-[13px] font-semibold text-white/70 hover:bg-white/10"
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          onClick={onPlayAgain}
+          className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-[13px] font-bold text-white shadow-[0_0_20px_rgba(217,70,239,0.4)] transition-transform hover:scale-105"
+        >
+          <Crown size={14} />
+          Play Again
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const WEREWOLF_ROLE_INFO: Record<WerewolfRole, { label: string; emoji: string; description: string }> = {
+  werewolf: { label: "Werewolf", emoji: "🐺", description: "Each night, vote with your fellow werewolves on a victim." },
+  doctor: { label: "Doctor", emoji: "💉", description: "Each night, choose one player to protect from the werewolves." },
+  seer: { label: "Seer", emoji: "🔮", description: "Each night, inspect one player to learn their true role." },
+  villager: { label: "Villager", emoji: "🧑‍🌾", description: "You have no night action - survive, and vote wisely by day." },
+};
+
+function werewolfEventText(event: WerewolfLastEvent, namesByMemberId: Record<string, string>): string {
+  if (event.kind === "night_result") {
+    return event.died_member_id
+      ? `${namesByMemberId[event.died_member_id] ?? "Someone"} was found dead this morning.`
+      : "Nobody died last night.";
+  }
+  return event.lynched_member_id
+    ? `${namesByMemberId[event.lynched_member_id] ?? "Someone"} was voted out by the village.`
+    : "The vote was tied - nobody was voted out.";
+}
+
+function WerewolfRoster({
+  game,
+  myMemberId,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+}) {
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="werewolf-roster">
+      {game.participantIds.map((memberId) => {
+        const isAlive = game.alive?.[memberId] ?? true;
+        const role = game.allRoles?.[memberId];
+        return (
+          <div
+            key={memberId}
+            className={`flex items-center gap-2 rounded-[var(--radius-md)] border border-white/10 bg-white/5 px-2.5 py-1.5 ${
+              !isAlive ? "opacity-50" : ""
+            }`}
+          >
+            <Avatar name={namesByMemberId[memberId] ?? "?"} seed={memberId} size="sm" />
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-white">
+              {namesByMemberId[memberId] ?? "Someone"} {memberId === myMemberId && <span className="text-violet-300">(you)</span>}
+            </span>
+            {!isAlive && <span className="text-[10px] font-semibold uppercase tracking-wide text-rose-300">eliminated</span>}
+            {role && (
+              <span className="text-[11px] text-white/50">
+                {WEREWOLF_ROLE_INFO[role].emoji} {WEREWOLF_ROLE_INFO[role].label}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WerewolfRoleBanner({
+  game,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+}) {
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const role = game.werewolfMyRole;
+  if (!role) return null;
+  const info = WEREWOLF_ROLE_INFO[role];
+  return (
+    <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-violet-400/30 bg-violet-500/10 p-3">
+      <p className="text-center text-[13px] font-bold text-white">
+        {info.emoji} You are the {info.label}
+      </p>
+      <p className="text-center text-[11px] text-white/60">{info.description}</p>
+      {role === "werewolf" && game.werewolfTeam && game.werewolfTeam.length > 1 && (
+        <p className="text-center text-[11px] text-rose-300">
+          Fellow werewolves: {game.werewolfTeam.filter((m) => m).map((m) => namesByMemberId[m] ?? "Someone").join(", ")}
+        </p>
+      )}
+      {role === "seer" && game.mySeerKnowledge && Object.keys(game.mySeerKnowledge).length > 0 && (
+        <div className="text-center text-[11px] text-white/60">
+          {Object.entries(game.mySeerKnowledge).map(([memberId, inspectedRole]) => (
+            <p key={memberId}>
+              {namesByMemberId[memberId] ?? "Someone"} is the {WEREWOLF_ROLE_INFO[inspectedRole].label}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WerewolfTargetPicker({
+  game,
+  myMemberId,
+  onPick,
+  excludeSelf,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  onPick: (targetId: string) => void;
+  excludeSelf?: boolean;
+}) {
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const living = game.participantIds.filter((m) => (game.alive?.[m] ?? true) && !(excludeSelf && m === myMemberId));
+  return (
+    <div className="flex flex-wrap justify-center gap-2" data-testid="werewolf-target-picker">
+      {living.map((memberId) => (
+        <button
+          key={memberId}
+          type="button"
+          onClick={() => onPick(memberId)}
+          data-testid="werewolf-target"
+          data-member-id={memberId}
+          className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[12px] font-medium text-white hover:border-violet-400 hover:bg-violet-500/10"
+        >
+          <Avatar name={namesByMemberId[memberId] ?? "?"} seed={memberId} size="sm" />
+          {namesByMemberId[memberId] ?? "Someone"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function WerewolfNightView({
+  game,
+  myMemberId,
+  isHost,
+  onAct,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onAct: (kind: "wolf_vote" | "doctor_save" | "seer_inspect", targetId: string) => void;
+  onSkip: () => void;
+}) {
+  const isReveal = game.phase === "reveal";
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const role = game.werewolfMyRole;
+  const actionKind =
+    role === "werewolf" ? "wolf_vote" : role === "doctor" ? "doctor_save" : role === "seer" ? "seer_inspect" : null;
+  const canAct = !isReveal && !!actionKind && !!game.needAction;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-indigo-300/80">
+        Night {game.nightNumber}
+      </p>
+
+      {isReveal && game.werewolfLastEvent && (
+        <div
+          data-testid="werewolf-last-event"
+          className="rounded-[var(--radius-md)] border border-emerald-400/30 bg-emerald-500/10 p-2.5 text-center text-[12px] text-emerald-200"
+        >
+          {werewolfEventText(game.werewolfLastEvent, namesByMemberId)}
+        </div>
+      )}
+
+      <WerewolfRoleBanner game={game} />
+
+      {canAct && actionKind && (
+        <>
+          <p className="text-center text-[13px] font-semibold text-white" data-testid="werewolf-night-prompt">
+            {actionKind === "wolf_vote" && "Choose a victim"}
+            {actionKind === "doctor_save" && "Choose someone to protect"}
+            {actionKind === "seer_inspect" && "Choose someone to inspect"}
+          </p>
+          <WerewolfTargetPicker game={game} myMemberId={myMemberId} onPick={(id) => onAct(actionKind, id)} />
+        </>
+      )}
+
+      {!canAct && !isReveal && (
+        <p className="text-center text-[12px] text-white/50">
+          {game.werewolfMyRole === "villager" ? "You have no night action - sit tight." : "Waiting on other players..."}
+        </p>
+      )}
+
+      <WerewolfRoster game={game} myMemberId={myMemberId} />
+
+      {isHost && !isReveal && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip night
+        </button>
+      )}
+    </div>
+  );
+}
+
+function WerewolfDayView({
+  game,
+  myMemberId,
+  isHost,
+  onVote,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onVote: (targetId: string) => void;
+  onSkip: () => void;
+}) {
+  const amAlive = game.alive?.[myMemberId] ?? true;
+  const canVote = amAlive && !!game.needAction;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-amber-300/80">
+        Day {game.nightNumber} · Vote
+      </p>
+
+      <WerewolfRoleBanner game={game} />
+
+      {canVote ? (
+        <>
+          <p className="text-center text-[13px] font-semibold text-white">Who should the village vote out?</p>
+          <WerewolfTargetPicker game={game} myMemberId={myMemberId} onPick={onVote} />
+          <button
+            type="button"
+            onClick={() => onVote("abstain")}
+            data-testid="werewolf-abstain"
+            className="self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+          >
+            Abstain
+          </button>
+        </>
+      ) : (
+        <p className="text-center text-[12px] text-white/50">
+          {amAlive ? "Waiting on other players to vote..." : "You've been eliminated - watch the vote play out."}
+        </p>
+      )}
+
+      <WerewolfRoster game={game} myMemberId={myMemberId} />
+
+      {isHost && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip vote
+        </button>
+      )}
+    </div>
+  );
+}
+
+function WerewolfFinalView({
+  game,
+  myMemberId,
+  onPlayAgain,
+  onClose,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  onPlayAgain: () => void;
+  onClose: () => void;
+}) {
+  const winner = game.werewolfWinner;
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <Trophy size={36} className={winner === "werewolves" ? "text-rose-300" : "text-emerald-300"} />
+      {winner && (
+        <p className="text-center text-[15px] font-bold text-white">
+          {winner === "werewolves" ? "🐺 The werewolves win!" : "🧑‍🌾 The villagers win!"}
+        </p>
+      )}
+      <WerewolfRoster game={game} myMemberId={myMemberId} />
       <div className="flex gap-2">
         <button
           type="button"

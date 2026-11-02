@@ -350,6 +350,15 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           heartsWinner: null,
           handPoints: null,
           heartsLastEvent: null,
+          nightNumber: null,
+          werewolfMyRole: null,
+          alive: null,
+          werewolfTeam: null,
+          mySeerKnowledge: null,
+          allRoles: null,
+          needAction: null,
+          werewolfWinner: null,
+          werewolfLastEvent: null,
         };
         if (event.kind === "trivia" && event.phase === "question") {
           store.setPartyGame({
@@ -462,6 +471,23 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             heartsWinner: event.winner,
             handPoints: event.phase === "hand_over" ? event.hand_points : null,
             heartsLastEvent: event.phase === "reveal" || event.phase === "hand_over" ? event.last_event : null,
+          });
+        } else if (
+          event.kind === "werewolf" &&
+          (event.phase === "night_actions" || event.phase === "day_vote" || event.phase === "reveal")
+        ) {
+          store.setPartyGame({
+            ...base,
+            ...empty,
+            nightNumber: event.night_number,
+            werewolfMyRole: event.my_role,
+            alive: event.alive,
+            werewolfTeam: event.werewolf_team,
+            mySeerKnowledge: event.my_seer_knowledge,
+            allRoles: event.all_roles,
+            needAction: event.need_action,
+            werewolfWinner: event.winner,
+            werewolfLastEvent: event.phase === "reveal" ? event.last_event : null,
           });
         } else {
           // Lobby - shared shape across every party-game kind.
