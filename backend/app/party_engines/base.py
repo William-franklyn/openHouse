@@ -44,6 +44,13 @@ class PartyEngine(Protocol):
     # "pick at least one invitee" floor. No GameEngine equivalent exists
     # (2-seat games always have exactly 2 by construction).
     MIN_PARTICIPANTS: int
+    # Optional - above this many participants, join_lobby refuses to let
+    # anyone else in ("This lobby is full."). Not part of the structural
+    # Protocol (checked via getattr, defaulting to "no limit") since most
+    # engines genuinely have none; Hearts needs exactly 4 (a 52-card deck
+    # dealt evenly, hardcoded trick/pass logic), so MIN_PARTICIPANTS ==
+    # MAX_PARTICIPANTS == 4 for it specifically.
+    # MAX_PARTICIPANTS: int
     # How many "rounds" (in whatever unit this engine calls a round - for
     # Trivia that's literally one question each; for Draft, see
     # draft_engine.py, it's one pick) a fresh game runs for by default.

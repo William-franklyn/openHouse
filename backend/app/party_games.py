@@ -52,7 +52,11 @@ async def join_lobby(session, party_game: PartyGame, member: Member) -> PartyGam
     if party_game.status != "lobby":
         raise DomainError("bad_request", "This party game has already started.")
     participants = json.loads(party_game.participants_json)
+    engine = get_party_engine(party_game.kind)
+    max_participants = getattr(engine, "MAX_PARTICIPANTS", None)
     if member.id not in participants:
+        if max_participants is not None and len(participants) >= max_participants:
+            raise DomainError("bad_request", "This lobby is full.")
         participants.append(member.id)
         party_game.participants_json = json.dumps(participants)
         party_game.updated_at = utcnow()
