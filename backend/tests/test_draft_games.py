@@ -197,6 +197,11 @@ async def test_full_game_finishes_after_three_scoring_rounds(client, app, monkey
         if state["status"] == "finished":
             break
         host_card = state["my_hand"][0]["id"]
+        # fakeredis pubsub delivery to each socket's listener task is not
+        # instantaneous - p2_ws may still be rendering the previous round,
+        # so wait for ITS OWN view to agree it's "picking" before trusting
+        # its my_hand (same race documented in test_uno_games.py).
+        assert await _wait_for(lambda: _party_states(p2_ws)[-1].get("phase") == "picking", timeout=2.0)
         p2_card = _party_states(p2_ws)[-1]["my_hand"][0]["id"]
         await ws_dispatch(app, room_id, host_id, "party_action", {"party_game_id": party_game_id, "card_id": host_card})
         await ws_dispatch(app, room_id, p2["member_id"], "party_action", {"party_game_id": party_game_id, "card_id": p2_card})
