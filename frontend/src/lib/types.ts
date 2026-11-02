@@ -511,7 +511,7 @@ export interface LeaderboardResponse {
 // genuinely separate type, not a GameKind. One live party game per room
 // at a time (enforced server-side). ----
 
-export type PartyGameKind = "trivia" | "draft" | "uno";
+export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames";
 export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
 export type PartyRoundPhase =
   | "lobby"
@@ -520,7 +520,9 @@ export type PartyRoundPhase =
   | "picking"
   | "scoring_round_over"
   | "turn"
-  | "hand_over";
+  | "hand_over"
+  | "clue"
+  | "guessing";
 
 export interface PartyScoreRow {
   member_id: string;
@@ -528,6 +530,9 @@ export interface PartyScoreRow {
   score: number;
   round_points: number | null;
   answered: boolean;
+  // Codenames-only: present on every row when kind === "codenames".
+  team?: "red" | "blue";
+  is_spymaster?: boolean;
 }
 
 export interface TriviaQuestionPublic {
@@ -685,6 +690,67 @@ export interface WSUnoHandOverState extends WSUnoStateBase {
   hand_result: UnoHandResult | null;
 }
 
+// ---- Codenames: two teams (red/blue), each with one spymaster (full
+// board visibility) and N operatives (only revealed owners visible).
+// Built as a PartyEngine by treating a "round" as one atomic action - a
+// clue or a single guess/pass - see the backend's codenames_engine.py. ----
+
+export type CodenamesTeam = "red" | "blue";
+export type CodenamesCardOwner = "red" | "blue" | "neutral" | "assassin";
+
+export interface CodenamesCard {
+  id: string;
+  word: string;
+  revealed: boolean;
+  owner: CodenamesCardOwner | null;
+}
+
+export interface CodenamesTeamRoster {
+  spymaster: string;
+  operatives: string[];
+}
+
+export interface CodenamesClue {
+  word: string;
+  number: number;
+}
+
+export interface CodenamesLastEvent {
+  kind: "clue_given" | "clue_timeout" | "guess_result" | "guess_pass" | "guess_timeout";
+  team: CodenamesTeam;
+  word?: string;
+  number?: number;
+  owner?: CodenamesCardOwner;
+}
+
+interface WSCodenamesStateBase extends WSPartyStateBase {
+  kind: "codenames";
+  teams: Record<CodenamesTeam, CodenamesTeamRoster>;
+  board: CodenamesCard[];
+  active_team: CodenamesTeam;
+  my_team: CodenamesTeam | null;
+  my_role: "spymaster" | "operative" | null;
+  current_clue: CodenamesClue | null;
+  guesses_remaining: number | null;
+  winner: CodenamesTeam | null;
+  win_reason: "all_words_found" | "assassin_hit" | null;
+}
+
+export interface WSCodenamesClueState extends WSCodenamesStateBase {
+  phase: "clue";
+  last_event: null;
+}
+
+export interface WSCodenamesGuessingState extends WSCodenamesStateBase {
+  phase: "guessing";
+  last_event: null;
+}
+
+export interface WSCodenamesRevealState extends WSCodenamesStateBase {
+  phase: "reveal";
+  last_event: CodenamesLastEvent;
+}
+
 export type WSPartyState =
   | WSPartyLobbyState
   | WSTriviaQuestionState
@@ -694,7 +760,10 @@ export type WSPartyState =
   | WSDraftScoringRoundOverState
   | WSUnoTurnState
   | WSUnoRevealState
-  | WSUnoHandOverState;
+  | WSUnoHandOverState
+  | WSCodenamesClueState
+  | WSCodenamesGuessingState
+  | WSCodenamesRevealState;
 
 export interface WSPartyCancelled {
   type: "party_cancelled";

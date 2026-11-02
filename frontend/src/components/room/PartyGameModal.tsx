@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
 import { Crown, RotateCcw, RotateCw, SkipForward, Trophy, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { CountdownBar } from "@/components/ui/CountdownBar";
 import { useRoomStore } from "@/lib/store";
 import { PARTY_GAME_REGISTRY } from "@/lib/partyGameRegistry";
-import { DraftCard, UnoCard, UnoColor } from "@/lib/types";
+import { CodenamesLastEvent, CodenamesTeam, CodenamesTeamRoster, DraftCard, UnoCard, UnoColor } from "@/lib/types";
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
 
@@ -49,6 +49,18 @@ export function PartyGameModal({
 
   function handleUnoDraw() {
     send("party_action", { party_game_id: game!.partyGameId, action: "draw" });
+  }
+
+  function handleCodenamesClue(word: string, number: number) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "clue", word, number });
+  }
+
+  function handleCodenamesGuess(wordId: string) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "guess", word_id: wordId });
+  }
+
+  function handleCodenamesPass() {
+    send("party_action", { party_game_id: game!.partyGameId, action: "pass" });
   }
 
   function handleJoin() {
@@ -151,7 +163,25 @@ export function PartyGameModal({
             <UnoHandOverView game={game} myMemberId={myMemberId} />
           )}
 
-          {game.status === "finished" && (
+          {game.status === "active" &&
+            game.kind === "codenames" &&
+            (game.phase === "clue" || game.phase === "guessing" || game.phase === "reveal") && (
+              <CodenamesBoardView
+                game={game}
+                myMemberId={myMemberId}
+                isHost={isHost}
+                onGiveClue={handleCodenamesClue}
+                onGuess={handleCodenamesGuess}
+                onPass={handleCodenamesPass}
+                onSkip={handleSkip}
+              />
+            )}
+
+          {game.status === "finished" && game.kind === "codenames" && (
+            <CodenamesFinalView game={game} onPlayAgain={handlePlayAgain} onClose={onClose} />
+          )}
+
+          {game.status === "finished" && game.kind !== "codenames" && (
             <FinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
         </div>
@@ -215,6 +245,8 @@ function LobbyView({
     <div className="flex flex-col gap-4">
       <p className="text-center text-[13px] text-white/60">
         Waiting for players - {game.participantIds.length} joined
+        {PARTY_GAME_REGISTRY[game.kind].minParticipants > 2 &&
+          ` (need ${PARTY_GAME_REGISTRY[game.kind].minParticipants}+)`}
       </p>
       <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
       <div className="flex gap-2">
@@ -239,7 +271,7 @@ function LobbyView({
           <button
             type="button"
             onClick={onBegin}
-            disabled={game.participantIds.length < 2}
+            disabled={game.participantIds.length < PARTY_GAME_REGISTRY[game.kind].minParticipants}
             className="flex-1 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 text-[13px] font-bold text-white shadow-[0_0_20px_rgba(217,70,239,0.4)] transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
           >
             Begin now
@@ -774,6 +806,333 @@ function UnoHandOverView({
       )}
       <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
       <p className="text-center text-[12px] text-white/40">Next hand coming up...</p>
+    </div>
+  );
+}
+
+const CODENAMES_TEAM_TEXT_CLASSES: Record<CodenamesTeam, string> = {
+  red: "text-rose-300",
+  blue: "text-blue-300",
+};
+
+const CODENAMES_OWNER_CLASSES: Record<string, string> = {
+  red: "bg-rose-600 text-white border-rose-400",
+  blue: "bg-blue-600 text-white border-blue-400",
+  neutral: "bg-amber-100 text-[#1a1a1a] border-amber-200",
+  assassin: "bg-black text-white border-white/40",
+};
+const CODENAMES_UNKNOWN_CLASS = "bg-white/10 text-white/80 border-white/15";
+
+function codenamesEventText(event: CodenamesLastEvent): string {
+  const teamName = event.team === "red" ? "Red" : "Blue";
+  switch (event.kind) {
+    case "clue_given":
+      return `${teamName} gave the clue: "${event.word}" (${event.number})`;
+    case "clue_timeout":
+      return `${teamName}'s spymaster ran out of time - turn passes`;
+    case "guess_pass":
+      return `${teamName} passed`;
+    case "guess_timeout":
+      return `${teamName} ran out of time to guess`;
+    case "guess_result": {
+      const ownerLabel =
+        event.owner === "assassin"
+          ? "the assassin!"
+          : event.owner === "neutral"
+            ? "a neutral word"
+            : `${event.owner === "red" ? "Red" : "Blue"}'s word`;
+      return `${teamName} guessed "${event.word}" - it was ${ownerLabel}`;
+    }
+    default:
+      return "";
+  }
+}
+
+function CodenamesTeamPanel({
+  team,
+  roster,
+  activeTeam,
+  myMemberId,
+  namesByMemberId,
+}: {
+  team: CodenamesTeam;
+  roster: CodenamesTeamRoster;
+  activeTeam: CodenamesTeam | null;
+  myMemberId: string;
+  namesByMemberId: Record<string, string>;
+}) {
+  const isActive = team === activeTeam;
+  return (
+    <div
+      data-testid={`codenames-team-${team}`}
+      className={`flex-1 rounded-[var(--radius-md)] border p-2.5 ${
+        isActive
+          ? team === "red"
+            ? "border-rose-400 bg-rose-500/10"
+            : "border-blue-400 bg-blue-500/10"
+          : "border-white/10 bg-white/5"
+      }`}
+    >
+      <p className={`mb-1.5 text-[11px] font-bold uppercase tracking-wide ${CODENAMES_TEAM_TEXT_CLASSES[team]}`}>
+        {team === "red" ? "Red" : "Blue"} Team {isActive && "· active"}
+      </p>
+      <p className="truncate text-[12px] text-white/80">
+        🕵️ {namesByMemberId[roster.spymaster] ?? "Someone"} {roster.spymaster === myMemberId && "(you)"}
+      </p>
+      {roster.operatives.map((memberId) => (
+        <p key={memberId} className="truncate text-[12px] text-white/60">
+          {namesByMemberId[memberId] ?? "Someone"} {memberId === myMemberId && "(you)"}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function CodenamesBoard({
+  board,
+  interactive,
+  onGuess,
+  size = "md",
+}: {
+  board: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>["codenamesBoard"];
+  interactive: boolean;
+  onGuess?: (wordId: string) => void;
+  size?: "sm" | "md";
+}) {
+  return (
+    <div className="grid grid-cols-5 gap-1.5" data-testid="codenames-board">
+      {(board ?? []).map((card) => {
+        const colorClass = card.owner ? CODENAMES_OWNER_CLASSES[card.owner] : CODENAMES_UNKNOWN_CLASS;
+        const clickable = interactive && !card.revealed;
+        return (
+          <button
+            key={card.id}
+            type="button"
+            disabled={!clickable}
+            onClick={() => onGuess?.(card.id)}
+            data-testid="codenames-word"
+            data-card-id={card.id}
+            className={`flex items-center justify-center rounded-[4px] border px-1 text-center font-bold leading-tight transition-transform ${
+              size === "sm" ? "h-9 text-[8px]" : "h-12 text-[10px]"
+            } ${colorClass} ${card.revealed ? "opacity-70" : ""} ${
+              clickable ? "cursor-pointer hover:scale-105" : "cursor-default"
+            }`}
+          >
+            {card.word}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CodenamesBoardView({
+  game,
+  myMemberId,
+  isHost,
+  onGiveClue,
+  onGuess,
+  onPass,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onGiveClue: (word: string, number: number) => void;
+  onGuess: (wordId: string) => void;
+  onPass: () => void;
+  onSkip: () => void;
+}) {
+  const [clueWord, setClueWord] = useState("");
+  const [clueNumber, setClueNumber] = useState(1);
+
+  const teams = game.codenamesTeams;
+  const activeTeam = game.activeTeam;
+  const isReveal = game.phase === "reveal";
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+
+  const isMySpymasterTurn = game.phase === "clue" && game.myRole === "spymaster" && game.myTeam === activeTeam;
+  const isMyGuessingTurn = game.phase === "guessing" && game.myRole === "operative" && game.myTeam === activeTeam;
+
+  function handleGiveClue(e: FormEvent) {
+    e.preventDefault();
+    const word = clueWord.trim();
+    if (!word) return;
+    onGiveClue(word, clueNumber);
+    setClueWord("");
+    setClueNumber(1);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {teams && (
+        <div className="flex gap-2">
+          <CodenamesTeamPanel
+            team="red"
+            roster={teams.red}
+            activeTeam={activeTeam}
+            myMemberId={myMemberId}
+            namesByMemberId={namesByMemberId}
+          />
+          <CodenamesTeamPanel
+            team="blue"
+            roster={teams.blue}
+            activeTeam={activeTeam}
+            myMemberId={myMemberId}
+            namesByMemberId={namesByMemberId}
+          />
+        </div>
+      )}
+
+      {isReveal && game.lastEvent && (
+        <div
+          data-testid="codenames-last-event"
+          className="rounded-[var(--radius-md)] border border-emerald-400/30 bg-emerald-500/10 p-2.5 text-center text-[12px] text-emerald-200"
+        >
+          {codenamesEventText(game.lastEvent)}
+        </div>
+      )}
+
+      {!isReveal && game.currentClue && (
+        <p className="text-center text-[15px] font-bold text-white">
+          Clue: {game.currentClue.word} ({game.currentClue.number})
+          {game.guessesRemaining !== null && (
+            <span className="ml-2 text-[12px] font-normal text-white/50">{game.guessesRemaining} guesses left</span>
+          )}
+        </p>
+      )}
+
+      {game.phase === "clue" && !isMySpymasterTurn && (
+        <p className="text-center text-[12px] text-white/50">
+          Waiting for {activeTeam === "red" ? "Red" : "Blue"}'s spymaster to give a clue...
+        </p>
+      )}
+
+      {game.phase === "guessing" && !isMyGuessingTurn && (
+        <p className="text-center text-[12px] text-white/50">
+          {activeTeam === "red" ? "Red" : "Blue"}'s operatives are guessing...
+        </p>
+      )}
+
+      {isMySpymasterTurn && (
+        <form onSubmit={handleGiveClue} className="flex items-center gap-2" data-testid="codenames-clue-form">
+          <input
+            value={clueWord}
+            onChange={(e) => setClueWord(e.target.value)}
+            placeholder="Your clue word"
+            maxLength={24}
+            autoFocus
+            data-testid="codenames-clue-input"
+            className="min-w-0 flex-1 rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-white/30 focus:border-violet-400 focus:outline-none"
+          />
+          <select
+            value={clueNumber}
+            onChange={(e) => setClueNumber(Number(e.target.value))}
+            data-testid="codenames-clue-number"
+            className="rounded-full border border-white/15 bg-white/5 px-2 py-2 text-[13px] text-white focus:border-violet-400 focus:outline-none"
+          >
+            {Array.from({ length: 10 }, (_, i) => i).map((n) => (
+              <option key={n} value={n} className="bg-[#1b1538]">
+                {n}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={!clueWord.trim()}
+            data-testid="codenames-clue-submit"
+            className="shrink-0 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Give clue
+          </button>
+        </form>
+      )}
+
+      <CodenamesBoard board={game.codenamesBoard} interactive={isMyGuessingTurn} onGuess={onGuess} />
+
+      {isMyGuessingTurn && (
+        <button
+          type="button"
+          onClick={onPass}
+          data-testid="codenames-pass-button"
+          className="self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/70 hover:bg-white/10"
+        >
+          Pass
+        </button>
+      )}
+
+      {isHost && !isReveal && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip phase
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CodenamesFinalView({
+  game,
+  onPlayAgain,
+  onClose,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  onPlayAgain: () => void;
+  onClose: () => void;
+}) {
+  const winner = game.winner;
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <Trophy size={36} className={winner === "red" ? "text-rose-300" : "text-blue-300"} />
+      <p className="text-center text-[15px] font-bold text-white">
+        {winner === "red" ? "Red" : "Blue"} Team wins!{" "}
+        <span className="font-normal text-white/50">
+          ({game.winReason === "assassin_hit" ? "the other team hit the assassin" : "found all their words"})
+        </span>
+      </p>
+      {game.codenamesTeams && (
+        <div className="flex w-full gap-2">
+          <CodenamesTeamPanel
+            team="red"
+            roster={game.codenamesTeams.red}
+            activeTeam={winner}
+            myMemberId=""
+            namesByMemberId={namesByMemberId}
+          />
+          <CodenamesTeamPanel
+            team="blue"
+            roster={game.codenamesTeams.blue}
+            activeTeam={winner}
+            myMemberId=""
+            namesByMemberId={namesByMemberId}
+          />
+        </div>
+      )}
+      <div className="w-full">
+        <CodenamesBoard board={game.codenamesBoard} interactive={false} size="sm" />
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-white/15 px-5 py-2.5 text-[13px] font-semibold text-white/70 hover:bg-white/10"
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          onClick={onPlayAgain}
+          className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-[13px] font-bold text-white shadow-[0_0_20px_rgba(217,70,239,0.4)] transition-transform hover:scale-105"
+        >
+          <Crown size={14} />
+          Play Again
+        </button>
+      </div>
     </div>
   );
 }

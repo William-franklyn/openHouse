@@ -5,6 +5,10 @@ import {
   CardGameKind,
   CardGameStatus,
   ChannelOut,
+  CodenamesCard,
+  CodenamesLastEvent,
+  CodenamesTeam,
+  CodenamesTeamRoster,
   DraftCard,
   DraftRoundResult,
   GameKind,
@@ -183,6 +187,17 @@ export interface PartyGameState {
   drawPileSize: number | null;
   lastAction: UnoLastAction | null;
   handResult: UnoHandResult | null;
+  // Codenames fields.
+  codenamesTeams: Record<CodenamesTeam, CodenamesTeamRoster> | null;
+  codenamesBoard: CodenamesCard[] | null;
+  activeTeam: CodenamesTeam | null;
+  myTeam: CodenamesTeam | null;
+  myRole: "spymaster" | "operative" | null;
+  currentClue: { word: string; number: number } | null;
+  guessesRemaining: number | null;
+  winner: CodenamesTeam | null;
+  winReason: "all_words_found" | "assassin_hit" | null;
+  lastEvent: CodenamesLastEvent | null;
 }
 
 // Card games (poker, the first) - a seated table whose chip stacks
