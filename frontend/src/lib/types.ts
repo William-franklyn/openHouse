@@ -511,9 +511,16 @@ export interface LeaderboardResponse {
 // genuinely separate type, not a GameKind. One live party game per room
 // at a time (enforced server-side). ----
 
-export type PartyGameKind = "trivia" | "draft";
+export type PartyGameKind = "trivia" | "draft" | "uno";
 export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
-export type PartyRoundPhase = "lobby" | "question" | "reveal" | "picking" | "scoring_round_over";
+export type PartyRoundPhase =
+  | "lobby"
+  | "question"
+  | "reveal"
+  | "picking"
+  | "scoring_round_over"
+  | "turn"
+  | "hand_over";
 
 export interface PartyScoreRow {
   member_id: string;
@@ -617,13 +624,77 @@ export interface WSDraftScoringRoundOverState extends WSDraftStateBase {
   round_results: Record<string, DraftRoundResult>;
 }
 
+// ---- Uno: strict turn rotation, not simultaneous like Trivia/Draft - a
+// "round" here means "one player's turn." Built as a PartyEngine anyway,
+// see the backend's uno_engine.py docstring for why. ----
+
+export type UnoColor = "Red" | "Blue" | "Green" | "Yellow" | "Wild";
+export type UnoCardKind = "number" | "skip" | "reverse" | "draw2" | "wild" | "wild_draw4";
+
+export interface UnoCard {
+  id: string;
+  color: UnoColor;
+  kind: UnoCardKind;
+  value: number | null;
+}
+
+export interface UnoHandResult {
+  winner_member_id: string;
+  points: number;
+  hand_sizes: Record<string, number>;
+}
+
+export interface UnoLastAction {
+  member_id: string;
+  kind: "draw" | "play";
+  card: UnoCard | null;
+}
+
+interface WSUnoStateBase extends WSPartyStateBase {
+  kind: "uno";
+  hand_number: number;
+  num_hands: number;
+}
+
+export interface WSUnoTurnState extends WSUnoStateBase {
+  phase: "turn";
+  my_hand: UnoCard[] | null;
+  hand_sizes: Record<string, number>;
+  discard_top: UnoCard | null;
+  active_color: UnoColor | null;
+  direction: 1 | -1;
+  current_player_id: string;
+  draw_pile_size: number;
+  last_action: null;
+}
+
+export interface WSUnoRevealState extends WSUnoStateBase {
+  phase: "reveal";
+  my_hand: UnoCard[] | null;
+  hand_sizes: Record<string, number>;
+  discard_top: UnoCard | null;
+  active_color: UnoColor | null;
+  direction: 1 | -1;
+  current_player_id: string;
+  draw_pile_size: number;
+  last_action: UnoLastAction;
+}
+
+export interface WSUnoHandOverState extends WSUnoStateBase {
+  phase: "hand_over";
+  hand_result: UnoHandResult | null;
+}
+
 export type WSPartyState =
   | WSPartyLobbyState
   | WSTriviaQuestionState
   | WSTriviaRevealState
   | WSDraftPickingState
   | WSDraftRevealState
-  | WSDraftScoringRoundOverState;
+  | WSDraftScoringRoundOverState
+  | WSUnoTurnState
+  | WSUnoRevealState
+  | WSUnoHandOverState;
 
 export interface WSPartyCancelled {
   type: "party_cancelled";

@@ -1,4 +1,4 @@
-import { Brain, LayoutGrid, LucideIcon } from "lucide-react";
+import { Brain, LayoutGrid, LucideIcon, Shuffle } from "lucide-react";
 import { PartyGameKind } from "./types";
 
 export interface PartyGameRegistryEntry {
@@ -20,5 +20,11 @@ export const PARTY_GAME_REGISTRY: Record<PartyGameKind, PartyGameRegistryEntry> 
     label: "Card Draft",
     icon: LayoutGrid,
     emoji: "🃏",
+  },
+  uno: {
+    kind: "uno",
+    label: "Uno",
+    icon: Shuffle,
+    emoji: "🔴",
   },
 };

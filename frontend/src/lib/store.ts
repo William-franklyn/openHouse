@@ -22,6 +22,10 @@ import {
   RoomPhoto,
   TriviaQuestionPublic,
   TriviaQuestionRevealed,
+  UnoCard,
+  UnoColor,
+  UnoHandResult,
+  UnoLastAction,
 } from "./types";
 
 export interface IncomingCallInvite {
@@ -166,6 +170,19 @@ export interface PartyGameState {
   collectedCounts: Record<string, number> | null;
   revealedPicks: Record<string, DraftCard> | null;
   roundResults: Record<string, DraftRoundResult> | null;
+  // Uno fields - a separate unoMyHand (not myHand) since its card shape
+  // (color/kind/value) differs entirely from Draft's DraftCard.
+  handNumber: number | null;
+  numHands: number | null;
+  unoMyHand: UnoCard[] | null;
+  handSizes: Record<string, number> | null;
+  discardTop: UnoCard | null;
+  activeColor: UnoColor | null;
+  direction: 1 | -1 | null;
+  currentPlayerId: string | null;
+  drawPileSize: number | null;
+  lastAction: UnoLastAction | null;
+  handResult: UnoHandResult | null;
 }
 
 // Card games (poker, the first) - a seated table whose chip stacks

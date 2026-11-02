@@ -1,11 +1,12 @@
 "use client";
 
-import { Crown, SkipForward, Trophy, X } from "lucide-react";
+import { useState } from "react";
+import { Crown, RotateCcw, RotateCw, SkipForward, Trophy, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { CountdownBar } from "@/components/ui/CountdownBar";
 import { useRoomStore } from "@/lib/store";
 import { PARTY_GAME_REGISTRY } from "@/lib/partyGameRegistry";
-import { DraftCard } from "@/lib/types";
+import { DraftCard, UnoCard, UnoColor } from "@/lib/types";
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
 
@@ -35,6 +36,19 @@ export function PartyGameModal({
 
   function handlePick(cardId: string) {
     send("party_action", { party_game_id: game!.partyGameId, card_id: cardId });
+  }
+
+  function handleUnoPlay(cardId: string, chosenColor?: UnoColor) {
+    send("party_action", {
+      party_game_id: game!.partyGameId,
+      action: "play",
+      card_id: cardId,
+      ...(chosenColor ? { chosen_color: chosenColor } : {}),
+    });
+  }
+
+  function handleUnoDraw() {
+    send("party_action", { party_game_id: game!.partyGameId, action: "draw" });
   }
 
   function handleJoin() {
@@ -120,6 +134,21 @@ export function PartyGameModal({
 
           {game.status === "active" && game.kind === "draft" && game.phase === "scoring_round_over" && (
             <DraftScoringRoundOverView game={game} myMemberId={myMemberId} />
+          )}
+
+          {game.status === "active" && game.kind === "uno" && (game.phase === "turn" || game.phase === "reveal") && (
+            <UnoTurnView
+              game={game}
+              myMemberId={myMemberId}
+              isHost={isHost}
+              onPlay={handleUnoPlay}
+              onDraw={handleUnoDraw}
+              onSkip={handleSkip}
+            />
+          )}
+
+          {game.status === "active" && game.kind === "uno" && game.phase === "hand_over" && (
+            <UnoHandOverView game={game} myMemberId={myMemberId} />
           )}
 
           {game.status === "finished" && (
@@ -508,6 +537,243 @@ function DraftScoringRoundOverView({
       </div>
       <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
       <p className="text-center text-[12px] text-white/40">Next round coming up...</p>
+    </div>
+  );
+}
+
+const UNO_COLORS: UnoColor[] = ["Red", "Blue", "Green", "Yellow"];
+
+const UNO_COLOR_CLASSES: Record<string, string> = {
+  Red: "bg-rose-500 text-white",
+  Blue: "bg-blue-500 text-white",
+  Green: "bg-emerald-500 text-white",
+  Yellow: "bg-amber-400 text-[#1a1a1a]",
+  Wild: "bg-gradient-to-br from-rose-500 via-amber-400 to-blue-500 text-white",
+};
+
+function unoCardLabel(card: UnoCard): string {
+  switch (card.kind) {
+    case "number":
+      return String(card.value);
+    case "skip":
+      return "⊘";
+    case "reverse":
+      return "⇄";
+    case "draw2":
+      return "+2";
+    case "wild":
+      return "W";
+    case "wild_draw4":
+      return "+4";
+    default:
+      return "?";
+  }
+}
+
+function canPlayUnoCard(card: UnoCard, activeColor: string | null, top: UnoCard | null): boolean {
+  if (!top || !activeColor) return true;
+  if (card.color === "Wild") return true;
+  if (card.color === activeColor) return true;
+  if (card.kind !== "number" && card.kind === top.kind) return true;
+  if (card.kind === "number" && top.kind === "number" && card.value === top.value) return true;
+  return false;
+}
+
+function UnoCardChip({ card, dimmed }: { card: UnoCard; dimmed?: boolean }) {
+  return (
+    <span
+      className={`flex h-12 w-9 shrink-0 flex-col items-center justify-center rounded-[4px] text-[14px] font-bold leading-none ${
+        UNO_COLOR_CLASSES[card.color] ?? "bg-white/20 text-white"
+      } ${dimmed ? "opacity-40" : ""}`}
+    >
+      {unoCardLabel(card)}
+    </span>
+  );
+}
+
+function UnoTurnView({
+  game,
+  myMemberId,
+  isHost,
+  onPlay,
+  onDraw,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onPlay: (cardId: string, chosenColor?: UnoColor) => void;
+  onDraw: () => void;
+  onSkip: () => void;
+}) {
+  const [pendingWildCardId, setPendingWildCardId] = useState<string | null>(null);
+  const isMyTurn = game.currentPlayerId === myMemberId;
+  const isReveal = game.phase === "reveal";
+  const currentPlayerName = game.scoreboard.find((r) => r.member_id === game.currentPlayerId)?.name ?? "Someone";
+
+  function handleCardClick(card: UnoCard) {
+    if (!isMyTurn || isReveal) return;
+    if (!canPlayUnoCard(card, game.activeColor, game.discardTop)) return;
+    if (card.color === "Wild") {
+      setPendingWildCardId(card.id);
+      return;
+    }
+    onPlay(card.id);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+        Hand {game.handNumber} of {game.numHands}
+      </p>
+
+      {isReveal && game.lastAction && (
+        <div className="rounded-[var(--radius-md)] border border-emerald-400/30 bg-emerald-500/10 p-2.5 text-center text-[12px] text-emerald-200">
+          {game.scoreboard.find((r) => r.member_id === game.lastAction!.member_id)?.name ?? "Someone"}
+          {game.lastAction.member_id === myMemberId ? " (you) " : " "}
+          {game.lastAction.kind === "draw" ? "drew a card" : "played a card"}
+        </div>
+      )}
+
+      <div className="flex items-center justify-center gap-4">
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-[10px] uppercase tracking-wide text-white/40">Draw pile</p>
+          <span className="flex h-12 w-9 items-center justify-center rounded-[4px] border border-white/20 bg-white/10 text-[12px] font-bold text-white/60">
+            {game.drawPileSize}
+          </span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-[10px] uppercase tracking-wide text-white/40">Discard</p>
+          {game.discardTop && <UnoCardChip card={game.discardTop} />}
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-[10px] uppercase tracking-wide text-white/40">Direction</p>
+          {game.direction === 1 ? (
+            <RotateCw size={18} className="text-white/60" />
+          ) : (
+            <RotateCcw size={18} className="text-white/60" />
+          )}
+        </div>
+      </div>
+
+      {game.activeColor && (
+        <p className="text-center text-[11px] text-white/50">
+          Active color:{" "}
+          <span className={`rounded px-1.5 py-0.5 ${UNO_COLOR_CLASSES[game.activeColor] ?? ""}`}>{game.activeColor}</span>
+        </p>
+      )}
+
+      <p className="text-center text-[13px] font-semibold text-white" data-testid="uno-turn-indicator">
+        {isMyTurn && !isReveal ? "Your turn!" : `${currentPlayerName}'s turn`}
+      </p>
+
+      {pendingWildCardId !== null && (
+        <div className="flex flex-col items-center gap-2 rounded-[var(--radius-md)] border border-white/15 bg-white/5 p-3">
+          <p className="text-[12px] text-white/70">Choose a color</p>
+          <div className="flex gap-2">
+            {UNO_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                onClick={() => {
+                  onPlay(pendingWildCardId, color);
+                  setPendingWildCardId(null);
+                }}
+                className={`h-9 w-9 rounded-full ${UNO_COLOR_CLASSES[color]} transition-transform hover:scale-110`}
+                aria-label={color}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPendingWildCardId(null)}
+            className="text-[11px] text-white/40 hover:text-white/60"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap justify-center gap-2" data-testid="uno-hand">
+        {(game.unoMyHand ?? []).map((card) => {
+          const playable = isMyTurn && !isReveal && canPlayUnoCard(card, game.activeColor, game.discardTop);
+          return (
+            <button
+              key={card.id}
+              type="button"
+              disabled={!playable}
+              onClick={() => handleCardClick(card)}
+              data-testid="uno-card"
+              data-card-id={card.id}
+              className={`rounded-[4px] transition-transform ${playable ? "cursor-pointer hover:scale-110" : "cursor-default"}`}
+            >
+              <UnoCardChip card={card} dimmed={!playable} />
+            </button>
+          );
+        })}
+      </div>
+
+      {isMyTurn && !isReveal && (
+        <button
+          type="button"
+          onClick={onDraw}
+          data-testid="uno-draw-button"
+          className="self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/70 hover:bg-white/10"
+        >
+          Draw a card
+        </button>
+      )}
+
+      <div className="flex flex-wrap justify-center gap-1.5 text-[11px] text-white/40">
+        {Object.entries(game.handSizes ?? {}).map(([memberId, size]) => {
+          if (memberId === myMemberId) return null;
+          const name = game.scoreboard.find((r) => r.member_id === memberId)?.name ?? "Someone";
+          return (
+            <span key={memberId} className="rounded-full border border-white/10 px-2 py-0.5">
+              {name}: {size}
+            </span>
+          );
+        })}
+      </div>
+
+      <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
+      {isHost && !isReveal && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip turn
+        </button>
+      )}
+    </div>
+  );
+}
+
+function UnoHandOverView({
+  game,
+  myMemberId,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+}) {
+  const result = game.handResult;
+  const winnerName = result
+    ? game.scoreboard.find((r) => r.member_id === result.winner_member_id)?.name ?? "Someone"
+    : null;
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-emerald-300/80">
+        Hand {game.handNumber} of {game.numHands} complete!
+      </p>
+      {result && (
+        <p className="text-center text-[15px] font-bold text-white">
+          {winnerName} {result.winner_member_id === myMemberId && "(you)"} went out and wins +{result.points} points!
+        </p>
+      )}
+      <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
+      <p className="text-center text-[12px] text-white/40">Next hand coming up...</p>
     </div>
   );
 }

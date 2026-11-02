@@ -317,6 +317,17 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           collectedCounts: null,
           revealedPicks: null,
           roundResults: null,
+          handNumber: null,
+          numHands: null,
+          unoMyHand: null,
+          handSizes: null,
+          discardTop: null,
+          activeColor: null,
+          direction: null,
+          currentPlayerId: null,
+          drawPileSize: null,
+          lastAction: null,
+          handResult: null,
         };
         if (event.kind === "trivia" && event.phase === "question") {
           store.setPartyGame({
@@ -365,6 +376,29 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             pickInRound: event.pick_in_round,
             handSize: event.hand_size,
             roundResults: event.round_results,
+          });
+        } else if (event.kind === "uno" && (event.phase === "turn" || event.phase === "reveal")) {
+          store.setPartyGame({
+            ...base,
+            ...empty,
+            handNumber: event.hand_number,
+            numHands: event.num_hands,
+            unoMyHand: event.my_hand,
+            handSizes: event.hand_sizes,
+            discardTop: event.discard_top,
+            activeColor: event.active_color,
+            direction: event.direction,
+            currentPlayerId: event.current_player_id,
+            drawPileSize: event.draw_pile_size,
+            lastAction: event.phase === "reveal" ? event.last_action : null,
+          });
+        } else if (event.kind === "uno" && event.phase === "hand_over") {
+          store.setPartyGame({
+            ...base,
+            ...empty,
+            handNumber: event.hand_number,
+            numHands: event.num_hands,
+            handResult: event.hand_result,
           });
         } else {
           // Lobby - shared shape across every party-game kind.
