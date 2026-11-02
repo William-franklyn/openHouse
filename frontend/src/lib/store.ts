@@ -5,6 +5,8 @@ import {
   CardGameKind,
   CardGameStatus,
   ChannelOut,
+  DraftCard,
+  DraftRoundResult,
   GameKind,
   GameResult,
   GameStatus,
@@ -144,6 +146,7 @@ export interface PartyGameState {
   participantIds: string[];
   scoreboard: PartyScoreRow[];
   phase: PartyRoundPhase;
+  // Trivia fields.
   question: TriviaQuestionPublic | TriviaQuestionRevealed | null;
   roundStartedAtMs: number | null;
   roundDeadlineMs: number | null;
@@ -151,6 +154,18 @@ export interface PartyGameState {
   myAnswer: { choiceIndex: number } | null;
   answers: Record<string, { choiceIndex: number; answeredAtMs: number }> | null;
   roundPointsAwarded: Record<string, number> | null;
+  // Draft fields - picked_member_ids reuses answeredMemberIds above (same
+  // concept: who's acted this round), everything else is draft-only.
+  scoringRound: number | null;
+  numScoringRounds: number | null;
+  pickInRound: number | null;
+  handSize: number | null;
+  myHand: DraftCard[] | null;
+  myPick: DraftCard | null;
+  myCollected: DraftCard[] | null;
+  collectedCounts: Record<string, number> | null;
+  revealedPicks: Record<string, DraftCard> | null;
+  roundResults: Record<string, DraftRoundResult> | null;
 }
 
 // Card games (poker, the first) - a seated table whose chip stacks

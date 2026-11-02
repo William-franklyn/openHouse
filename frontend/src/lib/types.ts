@@ -511,9 +511,9 @@ export interface LeaderboardResponse {
 // genuinely separate type, not a GameKind. One live party game per room
 // at a time (enforced server-side). ----
 
-export type PartyGameKind = "trivia";
+export type PartyGameKind = "trivia" | "draft";
 export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
-export type PartyRoundPhase = "lobby" | "question" | "reveal";
+export type PartyRoundPhase = "lobby" | "question" | "reveal" | "picking" | "scoring_round_over";
 
 export interface PartyScoreRow {
   member_id: string;
@@ -549,10 +549,10 @@ interface WSPartyStateBase {
 
 export interface WSPartyLobbyState extends WSPartyStateBase {
   phase: "lobby";
-  question: null;
 }
 
-export interface WSPartyQuestionState extends WSPartyStateBase {
+export interface WSTriviaQuestionState extends WSPartyStateBase {
+  kind: "trivia";
   phase: "question";
   question: TriviaQuestionPublic;
   round_started_at_ms: number;
@@ -561,14 +561,69 @@ export interface WSPartyQuestionState extends WSPartyStateBase {
   my_answer: { choice_index: number } | null;
 }
 
-export interface WSPartyRevealState extends WSPartyStateBase {
+export interface WSTriviaRevealState extends WSPartyStateBase {
+  kind: "trivia";
   phase: "reveal";
   question: TriviaQuestionRevealed;
   answers: Record<string, { choice_index: number; answered_at_ms: number }>;
   round_points_awarded: Record<string, number>;
 }
 
-export type WSPartyState = WSPartyLobbyState | WSPartyQuestionState | WSPartyRevealState;
+// ---- Draft (card draft): pick-and-pass hands, set-collection scoring.
+// Built as a PartyEngine (not CardEngine) - N participants in lockstep
+// rounds, no persistent chip stack, see the backend's draft_engine.py. ----
+
+export interface DraftCard {
+  id: string;
+  color: string;
+  value: number;
+}
+
+export interface DraftRoundResult {
+  collected: DraftCard[];
+  score: number;
+  colors: Record<string, number>;
+}
+
+interface WSDraftStateBase extends WSPartyStateBase {
+  kind: "draft";
+  scoring_round: number;
+  num_scoring_rounds: number;
+  pick_in_round: number;
+  hand_size: number;
+}
+
+export interface WSDraftPickingState extends WSDraftStateBase {
+  phase: "picking";
+  my_hand: DraftCard[] | null;
+  my_pick: DraftCard | null;
+  my_collected: DraftCard[] | null;
+  picked_member_ids: string[];
+  collected_counts: Record<string, number>;
+}
+
+export interface WSDraftRevealState extends WSDraftStateBase {
+  phase: "reveal";
+  my_hand: DraftCard[] | null;
+  my_pick: DraftCard | null;
+  my_collected: DraftCard[] | null;
+  picked_member_ids: string[];
+  collected_counts: Record<string, number>;
+  revealed_picks: Record<string, DraftCard>;
+}
+
+export interface WSDraftScoringRoundOverState extends WSDraftStateBase {
+  phase: "scoring_round_over";
+  round_results: Record<string, DraftRoundResult>;
+}
+
+export type WSPartyState =
+  | WSPartyLobbyState
+  | WSTriviaQuestionState
+  | WSTriviaRevealState
+  | WSDraftPickingState
+  | WSDraftRevealState
+  | WSDraftScoringRoundOverState;
 
 export interface WSPartyCancelled {
   type: "party_cancelled";

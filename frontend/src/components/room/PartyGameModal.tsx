@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { CountdownBar } from "@/components/ui/CountdownBar";
 import { useRoomStore } from "@/lib/store";
 import { PARTY_GAME_REGISTRY } from "@/lib/partyGameRegistry";
+import { DraftCard } from "@/lib/types";
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
 
@@ -30,6 +31,10 @@ export function PartyGameModal({
 
   function handleFire(choiceIndex: number) {
     send("party_action", { party_game_id: game!.partyGameId, choice_index: choiceIndex });
+  }
+
+  function handlePick(cardId: string) {
+    send("party_action", { party_game_id: game!.partyGameId, card_id: cardId });
   }
 
   function handleJoin() {
@@ -87,7 +92,7 @@ export function PartyGameModal({
             />
           )}
 
-          {game.status === "active" && game.phase === "question" && game.question && (
+          {game.status === "active" && game.kind === "trivia" && game.phase === "question" && game.question && (
             <QuestionView
               game={game}
               myMemberId={myMemberId}
@@ -98,8 +103,23 @@ export function PartyGameModal({
             />
           )}
 
-          {game.status === "active" && game.phase === "reveal" && "correct_index" in (game.question ?? {}) && (
-            <RevealView game={game} myMemberId={myMemberId} />
+          {game.status === "active" &&
+            game.kind === "trivia" &&
+            game.phase === "reveal" &&
+            "correct_index" in (game.question ?? {}) && <RevealView game={game} myMemberId={myMemberId} />}
+
+          {game.status === "active" && game.kind === "draft" && (game.phase === "picking" || game.phase === "reveal") && (
+            <DraftPickView
+              game={game}
+              myMemberId={myMemberId}
+              isHost={isHost}
+              onPick={handlePick}
+              onSkip={handleSkip}
+            />
+          )}
+
+          {game.status === "active" && game.kind === "draft" && game.phase === "scoring_round_over" && (
+            <DraftScoringRoundOverView game={game} myMemberId={myMemberId} />
           )}
 
           {game.status === "finished" && (
@@ -341,6 +361,153 @@ function FinalView({
           Play Again
         </button>
       </div>
+    </div>
+  );
+}
+
+const CARD_COLOR_CLASSES: Record<string, string> = {
+  Red: "bg-rose-500 text-white",
+  Blue: "bg-blue-500 text-white",
+  Green: "bg-emerald-500 text-white",
+  Yellow: "bg-amber-400 text-[#1a1a1a]",
+  Purple: "bg-violet-500 text-white",
+};
+
+function CardChip({ card, dimmed }: { card: DraftCard; dimmed?: boolean }) {
+  return (
+    <span
+      className={`flex h-10 w-8 shrink-0 flex-col items-center justify-center rounded-[4px] text-[13px] font-bold leading-none ${
+        CARD_COLOR_CLASSES[card.color] ?? "bg-white/20 text-white"
+      } ${dimmed ? "opacity-40" : ""}`}
+    >
+      {card.value}
+    </span>
+  );
+}
+
+function DraftPickView({
+  game,
+  myMemberId,
+  isHost,
+  onPick,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onPick: (cardId: string) => void;
+  onSkip: () => void;
+}) {
+  const havePicked = game.myPick !== null;
+  const isReveal = game.phase === "reveal";
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+        Round {(game.scoringRound ?? 0) + 1} of {game.numScoringRounds} · Pick {(game.pickInRound ?? 0) + 1} of{" "}
+        {game.handSize}
+      </p>
+
+      {isReveal && game.revealedPicks && (
+        <div className="flex flex-col gap-1.5 rounded-[var(--radius-md)] border border-emerald-400/30 bg-emerald-500/10 p-3">
+          {Object.entries(game.revealedPicks).map(([memberId, card]) => {
+            const name = game.scoreboard.find((r) => r.member_id === memberId)?.name ?? "Someone";
+            return (
+              <div key={memberId} className="flex items-center gap-2">
+                <CardChip card={card} />
+                <span className="text-[12px] text-emerald-200">
+                  {name} {memberId === myMemberId && "(you)"} picked a {card.value} {card.color}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!isReveal && (
+        <>
+          <p className="text-center text-[12px] text-white/50">Pick one card from your hand</p>
+          <div className="flex flex-wrap justify-center gap-2" data-testid="draft-hand">
+            {(game.myHand ?? []).map((card) => (
+              <button
+                key={card.id}
+                type="button"
+                disabled={havePicked}
+                onClick={() => onPick(card.id)}
+                data-testid="draft-card"
+                data-card-id={card.id}
+                data-picked={game.myPick?.id === card.id}
+                className={`rounded-[4px] transition-transform ${
+                  game.myPick?.id === card.id ? "scale-110 ring-2 ring-violet-400" : "hover:scale-105"
+                } ${havePicked ? "cursor-default" : "cursor-pointer"}`}
+              >
+                <CardChip card={card} dimmed={havePicked && game.myPick?.id !== card.id} />
+              </button>
+            ))}
+          </div>
+          <p className="text-center text-[11px] text-white/40" data-testid="picked-count">
+            {game.answeredMemberIds.length}/{game.participantIds.length} picked
+          </p>
+        </>
+      )}
+
+      {game.myCollected && game.myCollected.length > 0 && (
+        <div>
+          <p className="mb-1 text-center text-[10px] uppercase tracking-wide text-white/40">Your collection</p>
+          <div className="flex flex-wrap justify-center gap-1">
+            {game.myCollected.map((card) => (
+              <CardChip key={card.id} card={card} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
+      {isHost && !isReveal && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip pick
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DraftScoringRoundOverView({
+  game,
+  myMemberId,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+}) {
+  const results = game.roundResults ?? {};
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-emerald-300/80">
+        Round {(game.scoringRound ?? 0) + 1} of {game.numScoringRounds} complete!
+      </p>
+      <div className="flex flex-col gap-2">
+        {Object.entries(results).map(([memberId, result]) => {
+          const name = game.scoreboard.find((r) => r.member_id === memberId)?.name ?? "Someone";
+          return (
+            <div key={memberId} className="rounded-[var(--radius-md)] border border-white/10 bg-white/5 p-2.5">
+              <p className="mb-1.5 text-[12px] font-semibold text-white">
+                {name} {memberId === myMemberId && <span className="text-emerald-300">(you)</span>} · +{result.score}
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {result.collected.map((card) => (
+                  <CardChip key={card.id} card={card} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
+      <p className="text-center text-[12px] text-white/40">Next round coming up...</p>
     </div>
   );
 }

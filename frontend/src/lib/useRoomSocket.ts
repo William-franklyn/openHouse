@@ -299,25 +299,40 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           scoreboard: event.scoreboard,
           phase: event.phase,
         };
-        if (event.phase === "question") {
+        const empty = {
+          question: null,
+          roundStartedAtMs: null,
+          roundDeadlineMs: null,
+          answeredMemberIds: [],
+          myAnswer: null,
+          answers: null,
+          roundPointsAwarded: null,
+          scoringRound: null,
+          numScoringRounds: null,
+          pickInRound: null,
+          handSize: null,
+          myHand: null,
+          myPick: null,
+          myCollected: null,
+          collectedCounts: null,
+          revealedPicks: null,
+          roundResults: null,
+        };
+        if (event.kind === "trivia" && event.phase === "question") {
           store.setPartyGame({
             ...base,
+            ...empty,
             question: event.question,
             roundStartedAtMs: event.round_started_at_ms,
             roundDeadlineMs: event.round_deadline_ms,
             answeredMemberIds: event.answered_member_ids,
             myAnswer: event.my_answer ? { choiceIndex: event.my_answer.choice_index } : null,
-            answers: null,
-            roundPointsAwarded: null,
           });
-        } else if (event.phase === "reveal") {
+        } else if (event.kind === "trivia" && event.phase === "reveal") {
           store.setPartyGame({
             ...base,
+            ...empty,
             question: event.question,
-            roundStartedAtMs: null,
-            roundDeadlineMs: null,
-            answeredMemberIds: [],
-            myAnswer: null,
             answers: Object.fromEntries(
               Object.entries(event.answers).map(([id, a]) => [
                 id,
@@ -326,17 +341,34 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             ),
             roundPointsAwarded: event.round_points_awarded,
           });
-        } else {
+        } else if (event.kind === "draft" && (event.phase === "picking" || event.phase === "reveal")) {
           store.setPartyGame({
             ...base,
-            question: null,
-            roundStartedAtMs: null,
-            roundDeadlineMs: null,
-            answeredMemberIds: [],
-            myAnswer: null,
-            answers: null,
-            roundPointsAwarded: null,
+            ...empty,
+            scoringRound: event.scoring_round,
+            numScoringRounds: event.num_scoring_rounds,
+            pickInRound: event.pick_in_round,
+            handSize: event.hand_size,
+            myHand: event.my_hand,
+            myPick: event.my_pick,
+            myCollected: event.my_collected,
+            answeredMemberIds: event.picked_member_ids,
+            collectedCounts: event.collected_counts,
+            revealedPicks: event.phase === "reveal" ? event.revealed_picks : null,
           });
+        } else if (event.kind === "draft" && event.phase === "scoring_round_over") {
+          store.setPartyGame({
+            ...base,
+            ...empty,
+            scoringRound: event.scoring_round,
+            numScoringRounds: event.num_scoring_rounds,
+            pickInRound: event.pick_in_round,
+            handSize: event.hand_size,
+            roundResults: event.round_results,
+          });
+        } else {
+          // Lobby - shared shape across every party-game kind.
+          store.setPartyGame({ ...base, ...empty });
         }
         break;
       }
