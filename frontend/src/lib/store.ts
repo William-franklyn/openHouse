@@ -29,6 +29,11 @@ import {
   PokerPhase,
   PresenceMember,
   RoomPhoto,
+  SpadesCard,
+  SpadesHandResult,
+  SpadesLastEvent,
+  SpadesTeam,
+  SpadesTrickEntry,
   TriviaQuestionPublic,
   TriviaQuestionRevealed,
   UnoCard,
@@ -233,6 +238,23 @@ export interface PartyGameState {
   needAction: boolean | null;
   werewolfWinner: WerewolfWinner | null;
   werewolfLastEvent: WerewolfLastEvent | null;
+  // Spades fields - handSizes/leadSuit/trickNumber/currentPlayerId reused
+  // as-is from Hearts above (identical meaning and type); everything
+  // else here is prefixed where a name would otherwise collide with a
+  // differently-typed field from another kind.
+  spadesTeams: Record<SpadesTeam, string[]> | null;
+  spadesMyTeam: SpadesTeam | null;
+  spadesMyHand: SpadesCard[] | null;
+  myBid: number | null;
+  bidsSubmitted: string[] | null;
+  bids: Record<string, number> | null;
+  spadesCurrentTrick: SpadesTrickEntry[] | null;
+  spadesBroken: boolean | null;
+  teamScores: Record<SpadesTeam, number> | null;
+  teamBags: Record<SpadesTeam, number> | null;
+  spadesWinner: SpadesTeam | null;
+  handResults: Record<SpadesTeam, SpadesHandResult> | null;
+  spadesLastEvent: SpadesLastEvent | null;
 }
 
 // Card games (poker, the first) - a seated table whose chip stacks

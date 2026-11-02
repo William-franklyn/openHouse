@@ -359,6 +359,19 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           needAction: null,
           werewolfWinner: null,
           werewolfLastEvent: null,
+          spadesTeams: null,
+          spadesMyTeam: null,
+          spadesMyHand: null,
+          myBid: null,
+          bidsSubmitted: null,
+          bids: null,
+          spadesCurrentTrick: null,
+          spadesBroken: null,
+          teamScores: null,
+          teamBags: null,
+          spadesWinner: null,
+          handResults: null,
+          spadesLastEvent: null,
         };
         if (event.kind === "trivia" && event.phase === "question") {
           store.setPartyGame({
@@ -488,6 +501,32 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             needAction: event.need_action,
             werewolfWinner: event.winner,
             werewolfLastEvent: event.phase === "reveal" ? event.last_event : null,
+          });
+        } else if (
+          event.kind === "spades" &&
+          (event.phase === "bidding" || event.phase === "trick" || event.phase === "reveal" || event.phase === "hand_over")
+        ) {
+          store.setPartyGame({
+            ...base,
+            ...empty,
+            handNumber: event.hand_number,
+            spadesTeams: event.teams,
+            spadesMyTeam: event.my_team,
+            spadesMyHand: event.my_hand,
+            handSizes: event.hand_sizes,
+            myBid: event.my_bid,
+            bidsSubmitted: event.bids_submitted,
+            bids: event.bids,
+            spadesCurrentTrick: event.current_trick,
+            leadSuit: event.lead_suit,
+            spadesBroken: event.spades_broken,
+            trickNumber: event.trick_number,
+            currentPlayerId: event.current_player_id,
+            teamScores: event.team_scores,
+            teamBags: event.team_bags,
+            spadesWinner: event.winner,
+            handResults: event.phase === "hand_over" ? event.hand_results : null,
+            spadesLastEvent: event.phase === "reveal" || event.phase === "hand_over" ? event.last_event : null,
           });
         } else {
           // Lobby - shared shape across every party-game kind.

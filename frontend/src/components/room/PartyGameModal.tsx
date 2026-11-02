@@ -14,6 +14,9 @@ import {
   HeartsCard,
   HeartsLastEvent,
   HeartsSuit,
+  SpadesCard,
+  SpadesLastEvent,
+  SpadesTeam,
   UnoCard,
   UnoColor,
   WerewolfLastEvent,
@@ -89,6 +92,14 @@ export function PartyGameModal({
 
   function handleWerewolfDayVote(targetId: string) {
     send("party_action", { party_game_id: game!.partyGameId, action: "day_vote", target_id: targetId });
+  }
+
+  function handleSpadesBid(amount: number) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "bid", amount });
+  }
+
+  function handleSpadesPlay(cardId: string) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "play_card", card_id: cardId });
   }
 
   function handleJoin() {
@@ -255,10 +266,29 @@ export function PartyGameModal({
             <WerewolfFinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
 
+          {game.status === "active" && game.kind === "spades" && game.phase === "bidding" && (
+            <SpadesBiddingView game={game} myMemberId={myMemberId} isHost={isHost} onBid={handleSpadesBid} onSkip={handleSkip} />
+          )}
+
+          {game.status === "active" &&
+            game.kind === "spades" &&
+            (game.phase === "trick" || game.phase === "reveal") && (
+              <SpadesTrickView game={game} myMemberId={myMemberId} isHost={isHost} onPlay={handleSpadesPlay} onSkip={handleSkip} />
+            )}
+
+          {game.status === "active" && game.kind === "spades" && game.phase === "hand_over" && (
+            <SpadesHandOverView game={game} myMemberId={myMemberId} />
+          )}
+
+          {game.status === "finished" && game.kind === "spades" && (
+            <SpadesFinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
+          )}
+
           {game.status === "finished" &&
             game.kind !== "codenames" &&
             game.kind !== "hearts" &&
-            game.kind !== "werewolf" && (
+            game.kind !== "werewolf" &&
+            game.kind !== "spades" && (
             <FinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
         </div>
@@ -1866,6 +1896,322 @@ function WerewolfFinalView({
         </p>
       )}
       <WerewolfRoster game={game} myMemberId={myMemberId} />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-white/15 px-5 py-2.5 text-[13px] font-semibold text-white/70 hover:bg-white/10"
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          onClick={onPlayAgain}
+          className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-[13px] font-bold text-white shadow-[0_0_20px_rgba(217,70,239,0.4)] transition-transform hover:scale-105"
+        >
+          <Crown size={14} />
+          Play Again
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function spadesEventText(event: SpadesLastEvent, namesByMemberId: Record<string, string>): string {
+  const name = event.member_id ? (namesByMemberId[event.member_id] ?? "Someone") : "Someone";
+  switch (event.kind) {
+    case "bids_in":
+      return "Bidding is complete.";
+    case "card_played":
+      return event.card ? `${name} played ${heartsRankLabel(event.card.rank)}${HEARTS_SUIT_SYMBOLS[event.card.suit]}` : "";
+    case "trick_won":
+      return `${name} won the trick`;
+    default:
+      return "";
+  }
+}
+
+function spadesLegalCards(
+  hand: SpadesCard[],
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>
+): SpadesCard[] {
+  const trick = game.spadesCurrentTrick ?? [];
+  if (trick.length === 0) {
+    if (!game.spadesBroken) {
+      const nonSpades = hand.filter((c) => c.suit !== "S");
+      if (nonSpades.length > 0) return nonSpades;
+    }
+    return hand;
+  }
+  const sameSuit = hand.filter((c) => c.suit === game.leadSuit);
+  if (sameSuit.length > 0) return sameSuit;
+  return hand;
+}
+
+function SpadesTeamPanels({
+  game,
+  myMemberId,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+}) {
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const teams = game.spadesTeams;
+  if (!teams) return null;
+  return (
+    <div className="flex gap-2">
+      {(["team_a", "team_b"] as SpadesTeam[]).map((team) => (
+        <div key={team} className="flex-1 rounded-[var(--radius-md)] border border-white/10 bg-white/5 p-2.5">
+          <p className="mb-1 flex items-center justify-between text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+            <span>{team === "team_a" ? "Team A" : "Team B"}</span>
+            <span className="text-white">{game.teamScores?.[team] ?? 0}</span>
+          </p>
+          {teams[team].map((memberId) => (
+            <p key={memberId} className="truncate text-[12px] text-white/70">
+              {namesByMemberId[memberId] ?? "Someone"} {memberId === myMemberId && <span className="text-violet-300">(you)</span>}
+            </p>
+          ))}
+          <p className="mt-1 text-[10px] text-white/40">{game.teamBags?.[team] ?? 0} bags</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SpadesBiddingView({
+  game,
+  myMemberId,
+  isHost,
+  onBid,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onBid: (amount: number) => void;
+  onSkip: () => void;
+}) {
+  const [amount, setAmount] = useState(3);
+  const haveBid = game.myBid !== null;
+  const hand = game.spadesMyHand ?? [];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+        Hand {game.handNumber} · Bidding
+      </p>
+      <SpadesTeamPanels game={game} myMemberId={myMemberId} />
+
+      <div className="flex flex-wrap justify-center gap-2" data-testid="spades-hand">
+        {hand.map((card) => (
+          <HeartsCardChip key={card.id} card={card} />
+        ))}
+      </div>
+
+      {haveBid ? (
+        <p className="text-center text-[12px] text-white/50">
+          You bid {game.myBid}. Waiting for {game.bidsSubmitted ? 4 - game.bidsSubmitted.length : 0} more player(s)...
+        </p>
+      ) : (
+        <div className="flex items-center justify-center gap-2">
+          <select
+            value={amount}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            data-testid="spades-bid-select"
+            className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[13px] text-white focus:border-violet-400 focus:outline-none"
+          >
+            {Array.from({ length: 14 }, (_, i) => i).map((n) => (
+              <option key={n} value={n} className="bg-[#1b1538]">
+                {n}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => onBid(amount)}
+            data-testid="spades-bid-submit"
+            className="rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-[13px] font-bold text-white"
+          >
+            Bid {amount}
+          </button>
+        </div>
+      )}
+
+      {isHost && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip bidding
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SpadesTrickView({
+  game,
+  myMemberId,
+  isHost,
+  onPlay,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onPlay: (cardId: string) => void;
+  onSkip: () => void;
+}) {
+  const hand = game.spadesMyHand ?? [];
+  const isReveal = game.phase === "reveal";
+  const isMyTurn = game.currentPlayerId === myMemberId && !isReveal;
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const legalIds = new Set((isMyTurn ? spadesLegalCards(hand, game) : []).map((c) => c.id));
+  const currentPlayerName = namesByMemberId[game.currentPlayerId ?? ""] ?? "Someone";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+        Hand {game.handNumber} · Trick {(game.trickNumber ?? 0) + 1} of 13
+      </p>
+
+      <SpadesTeamPanels game={game} myMemberId={myMemberId} />
+
+      {isReveal && game.spadesLastEvent && (
+        <div
+          data-testid="spades-last-event"
+          className="rounded-[var(--radius-md)] border border-emerald-400/30 bg-emerald-500/10 p-2.5 text-center text-[12px] text-emerald-200"
+        >
+          {spadesEventText(game.spadesLastEvent, namesByMemberId)}
+        </div>
+      )}
+
+      <div className="flex flex-wrap justify-center gap-3" data-testid="spades-trick">
+        {(game.spadesCurrentTrick ?? []).map((entry) => (
+          <div key={entry.member_id} className="flex flex-col items-center gap-1">
+            <HeartsCardChip card={entry.card} />
+            <span className="text-[10px] text-white/50">
+              {namesByMemberId[entry.member_id] ?? "Someone"} {entry.member_id === myMemberId && "(you)"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-center text-[13px] font-semibold text-white" data-testid="spades-turn-indicator">
+        {isMyTurn ? "Your turn!" : `${currentPlayerName}'s turn`}
+      </p>
+
+      <div className="flex flex-wrap justify-center gap-2" data-testid="spades-hand">
+        {hand.map((card) => {
+          const playable = isMyTurn && legalIds.has(card.id);
+          return (
+            <button
+              key={card.id}
+              type="button"
+              disabled={!playable}
+              onClick={() => playable && onPlay(card.id)}
+              data-testid="spades-card"
+              data-card-id={card.id}
+              className={`rounded-[4px] transition-transform ${playable ? "cursor-pointer hover:-translate-y-1" : "cursor-default"}`}
+            >
+              <HeartsCardChip card={card} dimmed={!playable} />
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap justify-center gap-1.5 text-[11px] text-white/40">
+        {Object.entries(game.handSizes ?? {}).map(([memberId, size]) => {
+          if (memberId === myMemberId) return null;
+          return (
+            <span key={memberId} className="rounded-full border border-white/10 px-2 py-0.5">
+              {namesByMemberId[memberId] ?? "Someone"}: {size}
+            </span>
+          );
+        })}
+        {game.spadesBroken && (
+          <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2 py-0.5 text-indigo-300">
+            Spades broken
+          </span>
+        )}
+      </div>
+
+      {isHost && !isReveal && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip turn
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SpadesHandOverView({
+  game,
+  myMemberId,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+}) {
+  const results = game.handResults;
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-emerald-300/80">
+        Hand {game.handNumber} complete!
+      </p>
+      {results && (
+        <div className="flex flex-col gap-2">
+          {(["team_a", "team_b"] as SpadesTeam[]).map((team) => {
+            const r = results[team];
+            return (
+              <div key={team} className="rounded-[var(--radius-md)] border border-white/10 bg-white/5 p-2.5">
+                <p className="mb-1 text-[12px] font-semibold text-white">{team === "team_a" ? "Team A" : "Team B"}</p>
+                <p className="text-[12px] text-white/70">
+                  Bid {r.combined_bid}, took {r.tricks_taken} ·{" "}
+                  <span className={r.hand_score >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                    {r.hand_score >= 0 ? "+" : ""}
+                    {r.hand_score}
+                  </span>
+                  {r.bag_penalty > 0 && <span className="text-rose-300"> (-{r.bag_penalty} bag penalty)</span>}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <SpadesTeamPanels game={game} myMemberId={myMemberId} />
+      <p className="text-center text-[12px] text-white/40">Next hand coming up...</p>
+    </div>
+  );
+}
+
+function SpadesFinalView({
+  game,
+  myMemberId,
+  onPlayAgain,
+  onClose,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  onPlayAgain: () => void;
+  onClose: () => void;
+}) {
+  const winner = game.spadesWinner;
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <Trophy size={36} className="text-amber-300" />
+      {winner && (
+        <p className="text-center text-[15px] font-bold text-white">
+          {winner === "team_a" ? "Team A" : "Team B"} wins with {game.teamScores?.[winner] ?? 0} points!
+        </p>
+      )}
+      <SpadesTeamPanels game={game} myMemberId={myMemberId} />
       <div className="flex gap-2">
         <button
           type="button"

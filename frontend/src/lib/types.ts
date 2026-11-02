@@ -511,7 +511,7 @@ export interface LeaderboardResponse {
 // genuinely separate type, not a GameKind. One live party game per room
 // at a time (enforced server-side). ----
 
-export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames" | "hearts" | "werewolf";
+export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames" | "hearts" | "werewolf" | "spades";
 export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
 export type PartyRoundPhase =
   | "lobby"
@@ -526,7 +526,8 @@ export type PartyRoundPhase =
   | "passing"
   | "trick"
   | "night_actions"
-  | "day_vote";
+  | "day_vote"
+  | "bidding";
 
 export interface PartyScoreRow {
   member_id: string;
@@ -535,7 +536,7 @@ export interface PartyScoreRow {
   round_points: number | null;
   answered: boolean;
   // Codenames-only: present on every row when kind === "codenames".
-  team?: "red" | "blue";
+  team?: "red" | "blue" | "team_a" | "team_b";
   is_spymaster?: boolean;
 }
 
@@ -867,6 +868,85 @@ export interface WSWerewolfRevealState extends WSWerewolfStateBase {
   last_event: WerewolfLastEvent;
 }
 
+// ---- Spades: strictly 4 players in fixed partnerships (seats 0&2 vs
+// 1&3). Two round shapes interleaved within one hand, directly
+// extending hearts_engine.py's pattern: a simultaneous "bidding" round
+// (all 4 submit independently) and a single-actor "trick" round, with
+// spades always trump. See spades_engine.py. ----
+
+export type SpadesTeam = "team_a" | "team_b";
+
+export interface SpadesCard {
+  id: string;
+  suit: HeartsSuit;
+  rank: number;
+}
+
+export interface SpadesTrickEntry {
+  member_id: string;
+  card: SpadesCard;
+}
+
+export interface SpadesLastEvent {
+  kind: "bids_in" | "card_played" | "trick_won";
+  bids?: Record<string, number>;
+  member_id?: string;
+  card?: SpadesCard;
+  cards?: SpadesCard[];
+}
+
+export interface SpadesHandResult {
+  combined_bid: number;
+  tricks_taken: number;
+  hand_score: number;
+  bag_penalty: number;
+  cumulative_score: number;
+}
+
+interface WSSpadesStateBase extends WSPartyStateBase {
+  kind: "spades";
+  hand_number: number;
+  teams: Record<SpadesTeam, string[]> | null;
+  my_team: SpadesTeam | null;
+  my_hand: SpadesCard[] | null;
+  hand_sizes: Record<string, number>;
+  my_bid: number | null;
+  bids_submitted: string[];
+  bids: Record<string, number> | null;
+  current_trick: SpadesTrickEntry[];
+  lead_suit: HeartsSuit | null;
+  spades_broken: boolean;
+  trick_number: number;
+  current_player_id: string | null;
+  team_scores: Record<SpadesTeam, number>;
+  team_bags: Record<SpadesTeam, number>;
+  winner: SpadesTeam | null;
+}
+
+export interface WSSpadesBiddingState extends WSSpadesStateBase {
+  phase: "bidding";
+  hand_results: null;
+  last_event: null;
+}
+
+export interface WSSpadesTrickState extends WSSpadesStateBase {
+  phase: "trick";
+  hand_results: null;
+  last_event: null;
+}
+
+export interface WSSpadesRevealState extends WSSpadesStateBase {
+  phase: "reveal";
+  hand_results: null;
+  last_event: SpadesLastEvent;
+}
+
+export interface WSSpadesHandOverState extends WSSpadesStateBase {
+  phase: "hand_over";
+  hand_results: Record<SpadesTeam, SpadesHandResult>;
+  last_event: SpadesLastEvent;
+}
+
 export type WSPartyState =
   | WSPartyLobbyState
   | WSTriviaQuestionState
@@ -886,7 +966,11 @@ export type WSPartyState =
   | WSHeartsHandOverState
   | WSWerewolfNightState
   | WSWerewolfDayState
-  | WSWerewolfRevealState;
+  | WSWerewolfRevealState
+  | WSSpadesBiddingState
+  | WSSpadesTrickState
+  | WSSpadesRevealState
+  | WSSpadesHandOverState;
 
 export interface WSPartyCancelled {
   type: "party_cancelled";
