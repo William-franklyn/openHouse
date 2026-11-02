@@ -511,7 +511,7 @@ export interface LeaderboardResponse {
 // genuinely separate type, not a GameKind. One live party game per room
 // at a time (enforced server-side). ----
 
-export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames";
+export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames" | "hearts";
 export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
 export type PartyRoundPhase =
   | "lobby"
@@ -522,7 +522,9 @@ export type PartyRoundPhase =
   | "turn"
   | "hand_over"
   | "clue"
-  | "guessing";
+  | "guessing"
+  | "passing"
+  | "trick";
 
 export interface PartyScoreRow {
   member_id: string;
@@ -751,6 +753,74 @@ export interface WSCodenamesRevealState extends WSCodenamesStateBase {
   last_event: CodenamesLastEvent;
 }
 
+// ---- Hearts: strictly 4 players, two round shapes interleaved within
+// one hand - a simultaneous "passing" round (everyone submits 3 cards
+// independently, like Trivia) and a single-actor "trick" round (like
+// Uno's one-turn-per-round reinterpretation). See hearts_engine.py. ----
+
+export type HeartsSuit = "C" | "D" | "H" | "S";
+export type HeartsPassDirection = "left" | "right" | "across" | "hold";
+
+export interface HeartsCard {
+  id: string;
+  suit: HeartsSuit;
+  rank: number;
+}
+
+export interface HeartsTrickEntry {
+  member_id: string;
+  card: HeartsCard;
+}
+
+export interface HeartsLastEvent {
+  kind: "cards_passed" | "card_played" | "trick_won";
+  direction?: HeartsPassDirection;
+  member_id?: string;
+  card?: HeartsCard;
+  cards?: HeartsCard[];
+}
+
+interface WSHeartsStateBase extends WSPartyStateBase {
+  kind: "hearts";
+  hand_number: number;
+  pass_direction: HeartsPassDirection | null;
+  pass_to_member_id: string | null;
+  my_hand: HeartsCard[] | null;
+  hand_sizes: Record<string, number>;
+  have_passed: boolean;
+  current_trick: HeartsTrickEntry[];
+  lead_suit: HeartsSuit | null;
+  hearts_broken: boolean;
+  trick_number: number;
+  current_player_id: string | null;
+  raw_scores: Record<string, number>;
+  winner: string | null;
+}
+
+export interface WSHeartsPassingState extends WSHeartsStateBase {
+  phase: "passing";
+  hand_points: null;
+  last_event: null;
+}
+
+export interface WSHeartsTrickState extends WSHeartsStateBase {
+  phase: "trick";
+  hand_points: null;
+  last_event: null;
+}
+
+export interface WSHeartsRevealState extends WSHeartsStateBase {
+  phase: "reveal";
+  hand_points: null;
+  last_event: HeartsLastEvent;
+}
+
+export interface WSHeartsHandOverState extends WSHeartsStateBase {
+  phase: "hand_over";
+  hand_points: Record<string, number>;
+  last_event: HeartsLastEvent;
+}
+
 export type WSPartyState =
   | WSPartyLobbyState
   | WSTriviaQuestionState
@@ -763,7 +833,11 @@ export type WSPartyState =
   | WSUnoHandOverState
   | WSCodenamesClueState
   | WSCodenamesGuessingState
-  | WSCodenamesRevealState;
+  | WSCodenamesRevealState
+  | WSHeartsPassingState
+  | WSHeartsTrickState
+  | WSHeartsRevealState
+  | WSHeartsHandOverState;
 
 export interface WSPartyCancelled {
   type: "party_cancelled";

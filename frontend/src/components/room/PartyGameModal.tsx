@@ -6,7 +6,17 @@ import { Avatar } from "@/components/ui/Avatar";
 import { CountdownBar } from "@/components/ui/CountdownBar";
 import { useRoomStore } from "@/lib/store";
 import { PARTY_GAME_REGISTRY } from "@/lib/partyGameRegistry";
-import { CodenamesLastEvent, CodenamesTeam, CodenamesTeamRoster, DraftCard, UnoCard, UnoColor } from "@/lib/types";
+import {
+  CodenamesLastEvent,
+  CodenamesTeam,
+  CodenamesTeamRoster,
+  DraftCard,
+  HeartsCard,
+  HeartsLastEvent,
+  HeartsSuit,
+  UnoCard,
+  UnoColor,
+} from "@/lib/types";
 
 type SendFn = (type: string, data?: Record<string, unknown>) => void;
 
@@ -61,6 +71,14 @@ export function PartyGameModal({
 
   function handleCodenamesPass() {
     send("party_action", { party_game_id: game!.partyGameId, action: "pass" });
+  }
+
+  function handleHeartsPass(cardIds: string[]) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "pass", card_ids: cardIds });
+  }
+
+  function handleHeartsPlay(cardId: string) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "play_card", card_id: cardId });
   }
 
   function handleJoin() {
@@ -181,7 +199,25 @@ export function PartyGameModal({
             <CodenamesFinalView game={game} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
 
-          {game.status === "finished" && game.kind !== "codenames" && (
+          {game.status === "active" && game.kind === "hearts" && game.phase === "passing" && (
+            <HeartsPassingView game={game} myMemberId={myMemberId} isHost={isHost} onPass={handleHeartsPass} onSkip={handleSkip} />
+          )}
+
+          {game.status === "active" &&
+            game.kind === "hearts" &&
+            (game.phase === "trick" || game.phase === "reveal") && (
+              <HeartsTrickView game={game} myMemberId={myMemberId} isHost={isHost} onPlay={handleHeartsPlay} onSkip={handleSkip} />
+            )}
+
+          {game.status === "active" && game.kind === "hearts" && game.phase === "hand_over" && (
+            <HeartsHandOverView game={game} myMemberId={myMemberId} />
+          )}
+
+          {game.status === "finished" && game.kind === "hearts" && (
+            <HeartsFinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
+          )}
+
+          {game.status === "finished" && game.kind !== "codenames" && game.kind !== "hearts" && (
             <FinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
         </div>
@@ -1116,6 +1152,388 @@ function CodenamesFinalView({
       <div className="w-full">
         <CodenamesBoard board={game.codenamesBoard} interactive={false} size="sm" />
       </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-white/15 px-5 py-2.5 text-[13px] font-semibold text-white/70 hover:bg-white/10"
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          onClick={onPlayAgain}
+          className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-[13px] font-bold text-white shadow-[0_0_20px_rgba(217,70,239,0.4)] transition-transform hover:scale-105"
+        >
+          <Crown size={14} />
+          Play Again
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const HEARTS_SUIT_SYMBOLS: Record<HeartsSuit, string> = { C: "♣", D: "♦", H: "♥", S: "♠" };
+const HEARTS_RED_SUITS: HeartsSuit[] = ["D", "H"];
+
+function heartsRankLabel(rank: number): string {
+  if (rank === 11) return "J";
+  if (rank === 12) return "Q";
+  if (rank === 13) return "K";
+  if (rank === 14) return "A";
+  return String(rank);
+}
+
+function isHeartsPointCard(card: HeartsCard): boolean {
+  return card.suit === "H" || (card.suit === "S" && card.rank === 12);
+}
+
+// Mirrors hearts_engine.py's _legal_cards exactly (verified against the
+// same standalone script before being written here) - used purely for
+// client-side greying-out; the server is still the real authority.
+function heartsLegalCards(
+  hand: HeartsCard[],
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>
+): HeartsCard[] {
+  const trick = game.currentTrick ?? [];
+  const isFirstTrick = (game.trickNumber ?? 0) === 0;
+  if (trick.length === 0) {
+    if (isFirstTrick) {
+      const twoClubs = hand.find((c) => c.suit === "C" && c.rank === 2);
+      return twoClubs ? [twoClubs] : hand;
+    }
+    if (!game.heartsBroken) {
+      const nonHearts = hand.filter((c) => c.suit !== "H");
+      if (nonHearts.length > 0) return nonHearts;
+    }
+    return hand;
+  }
+  const sameSuit = hand.filter((c) => c.suit === game.leadSuit);
+  if (sameSuit.length > 0) return sameSuit;
+  if (isFirstTrick) {
+    const safe = hand.filter((c) => !isHeartsPointCard(c));
+    if (safe.length > 0) return safe;
+  }
+  return hand;
+}
+
+function heartsEventText(event: HeartsLastEvent, namesByMemberId: Record<string, string>): string {
+  const name = event.member_id ? (namesByMemberId[event.member_id] ?? "Someone") : "Someone";
+  switch (event.kind) {
+    case "cards_passed":
+      return `Cards have been passed (${event.direction})`;
+    case "card_played":
+      return event.card ? `${name} played ${heartsRankLabel(event.card.rank)}${HEARTS_SUIT_SYMBOLS[event.card.suit]}` : "";
+    case "trick_won":
+      return `${name} won the trick`;
+    default:
+      return "";
+  }
+}
+
+function HeartsCardChip({ card, dimmed }: { card: HeartsCard; dimmed?: boolean }) {
+  const isRed = HEARTS_RED_SUITS.includes(card.suit);
+  return (
+    <span
+      className={`flex h-12 w-9 shrink-0 flex-col items-center justify-center rounded-[4px] border bg-white text-[13px] font-bold leading-none ${
+        isRed ? "border-rose-200 text-rose-600" : "border-black/10 text-[#1a1a1a]"
+      } ${dimmed ? "opacity-40" : ""}`}
+    >
+      <span>{heartsRankLabel(card.rank)}</span>
+      <span className="text-[11px]">{HEARTS_SUIT_SYMBOLS[card.suit]}</span>
+    </span>
+  );
+}
+
+function HeartsStandings({
+  game,
+  myMemberId,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+}) {
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const rows = Object.entries(game.rawScores ?? {}).sort((a, b) => a[1] - b[1]);
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="hearts-standings">
+      {rows.map(([memberId, score], i) => (
+        <div
+          key={memberId}
+          className="flex items-center gap-2 rounded-[var(--radius-md)] border border-white/10 bg-white/5 px-2.5 py-1.5"
+        >
+          <span className="w-4 shrink-0 text-center text-[11px] font-bold text-white/40">{i + 1}</span>
+          <Avatar name={namesByMemberId[memberId] ?? "?"} seed={memberId} size="sm" />
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-white">
+            {namesByMemberId[memberId] ?? "Someone"} {memberId === myMemberId && <span className="text-violet-300">(you)</span>}
+          </span>
+          <span className="text-[13px] font-bold text-white">{score}</span>
+        </div>
+      ))}
+      <p className="text-center text-[10px] text-white/30">Lowest score wins</p>
+    </div>
+  );
+}
+
+function HeartsPassingView({
+  game,
+  myMemberId,
+  isHost,
+  onPass,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onPass: (cardIds: string[]) => void;
+  onSkip: () => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const hand = game.heartsMyHand ?? [];
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const recipientName = game.passToMemberId ? (namesByMemberId[game.passToMemberId] ?? "Someone") : null;
+
+  function toggle(cardId: string) {
+    if (game.havePassed) return;
+    setSelected((prev) => {
+      if (prev.includes(cardId)) return prev.filter((id) => id !== cardId);
+      if (prev.length >= 3) return prev;
+      return [...prev, cardId];
+    });
+  }
+
+  function handleSubmit() {
+    if (selected.length !== 3) return;
+    onPass(selected);
+    setSelected([]);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+        Hand {game.handNumber}
+      </p>
+      <p className="text-center text-[13px] font-semibold text-white">
+        {game.havePassed
+          ? "Waiting for everyone else to pass..."
+          : `Choose 3 cards to pass${recipientName ? ` to ${recipientName}` : ""}`}
+      </p>
+      <div className="flex flex-wrap justify-center gap-2" data-testid="hearts-hand">
+        {hand.map((card) => {
+          const isSelected = selected.includes(card.id);
+          return (
+            <button
+              key={card.id}
+              type="button"
+              disabled={!!game.havePassed}
+              onClick={() => toggle(card.id)}
+              data-testid="hearts-card"
+              data-card-id={card.id}
+              className={`rounded-[4px] transition-transform ${
+                isSelected ? "-translate-y-2 ring-2 ring-violet-400" : "hover:-translate-y-1"
+              }`}
+            >
+              <HeartsCardChip card={card} dimmed={!!game.havePassed} />
+            </button>
+          );
+        })}
+      </div>
+      {!game.havePassed && (
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={selected.length !== 3}
+          data-testid="hearts-pass-submit"
+          className="self-center rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Pass {selected.length}/3
+        </button>
+      )}
+      <HeartsStandings game={game} myMemberId={myMemberId} />
+      {isHost && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip passing
+        </button>
+      )}
+    </div>
+  );
+}
+
+function HeartsTrickView({
+  game,
+  myMemberId,
+  isHost,
+  onPlay,
+  onSkip,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onPlay: (cardId: string) => void;
+  onSkip: () => void;
+}) {
+  const hand = game.heartsMyHand ?? [];
+  const isReveal = game.phase === "reveal";
+  const isMyTurn = game.currentPlayerId === myMemberId && !isReveal;
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const legalIds = new Set((isMyTurn ? heartsLegalCards(hand, game) : []).map((c) => c.id));
+  const currentPlayerName = namesByMemberId[game.currentPlayerId ?? ""] ?? "Someone";
+
+  function handleClick(card: HeartsCard) {
+    if (!isMyTurn || !legalIds.has(card.id)) return;
+    onPlay(card.id);
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+        Hand {game.handNumber} · Trick {(game.trickNumber ?? 0) + 1} of 13
+      </p>
+
+      {isReveal && game.heartsLastEvent && (
+        <div
+          data-testid="hearts-last-event"
+          className="rounded-[var(--radius-md)] border border-emerald-400/30 bg-emerald-500/10 p-2.5 text-center text-[12px] text-emerald-200"
+        >
+          {heartsEventText(game.heartsLastEvent, namesByMemberId)}
+        </div>
+      )}
+
+      <div className="flex flex-wrap justify-center gap-3" data-testid="hearts-trick">
+        {(game.currentTrick ?? []).map((entry) => (
+          <div key={entry.member_id} className="flex flex-col items-center gap-1">
+            <HeartsCardChip card={entry.card} />
+            <span className="text-[10px] text-white/50">
+              {namesByMemberId[entry.member_id] ?? "Someone"} {entry.member_id === myMemberId && "(you)"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-center text-[13px] font-semibold text-white" data-testid="hearts-turn-indicator">
+        {isMyTurn ? "Your turn!" : `${currentPlayerName}'s turn`}
+      </p>
+
+      <div className="flex flex-wrap justify-center gap-2" data-testid="hearts-hand">
+        {hand.map((card) => {
+          const playable = isMyTurn && legalIds.has(card.id);
+          return (
+            <button
+              key={card.id}
+              type="button"
+              disabled={!playable}
+              onClick={() => handleClick(card)}
+              data-testid="hearts-card"
+              data-card-id={card.id}
+              className={`rounded-[4px] transition-transform ${playable ? "cursor-pointer hover:-translate-y-1" : "cursor-default"}`}
+            >
+              <HeartsCardChip card={card} dimmed={!playable} />
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap justify-center gap-1.5 text-[11px] text-white/40">
+        {Object.entries(game.handSizes ?? {}).map(([memberId, size]) => {
+          if (memberId === myMemberId) return null;
+          return (
+            <span key={memberId} className="rounded-full border border-white/10 px-2 py-0.5">
+              {namesByMemberId[memberId] ?? "Someone"}: {size}
+            </span>
+          );
+        })}
+        {game.heartsBroken && (
+          <span className="rounded-full border border-rose-400/30 bg-rose-500/10 px-2 py-0.5 text-rose-300">
+            Hearts broken
+          </span>
+        )}
+      </div>
+
+      <HeartsStandings game={game} myMemberId={myMemberId} />
+
+      {isHost && !isReveal && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip turn
+        </button>
+      )}
+    </div>
+  );
+}
+
+function HeartsHandOverView({
+  game,
+  myMemberId,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+}) {
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const handPoints = game.handPoints ?? {};
+  const moonShooterEntry =
+    Object.values(handPoints).includes(26) && Object.values(handPoints).includes(0)
+      ? Object.entries(handPoints).find(([, p]) => p === 0)
+      : undefined;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-emerald-300/80">
+        Hand {game.handNumber} complete!
+      </p>
+      {moonShooterEntry && (
+        <p className="text-center text-[13px] font-bold text-amber-300">
+          {namesByMemberId[moonShooterEntry[0]] ?? "Someone"} shot the moon!
+        </p>
+      )}
+      <div className="flex flex-col gap-1.5">
+        {Object.entries(handPoints).map(([memberId, points]) => (
+          <div
+            key={memberId}
+            className="flex items-center justify-between rounded-[var(--radius-md)] border border-white/10 bg-white/5 px-3 py-2"
+          >
+            <span className="text-[13px] text-white">
+              {namesByMemberId[memberId] ?? "Someone"} {memberId === myMemberId && "(you)"}
+            </span>
+            <span className="text-[13px] font-bold text-white">+{points}</span>
+          </div>
+        ))}
+      </div>
+      <HeartsStandings game={game} myMemberId={myMemberId} />
+      <p className="text-center text-[12px] text-white/40">Next hand coming up...</p>
+    </div>
+  );
+}
+
+function HeartsFinalView({
+  game,
+  myMemberId,
+  onPlayAgain,
+  onClose,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  onPlayAgain: () => void;
+  onClose: () => void;
+}) {
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const winnerName = game.heartsWinner ? (namesByMemberId[game.heartsWinner] ?? "Someone") : null;
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <Trophy size={36} className="text-amber-300" />
+      {winnerName && (
+        <p className="text-center text-[15px] font-bold text-white">
+          {winnerName} {game.heartsWinner === myMemberId && "(you)"} wins with the lowest score!
+        </p>
+      )}
+      <HeartsStandings game={game} myMemberId={myMemberId} />
       <div className="flex gap-2">
         <button
           type="button"

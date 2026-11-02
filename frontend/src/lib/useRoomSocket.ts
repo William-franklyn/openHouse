@@ -338,6 +338,18 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           winner: null,
           winReason: null,
           lastEvent: null,
+          passDirection: null,
+          passToMemberId: null,
+          heartsMyHand: null,
+          havePassed: null,
+          currentTrick: null,
+          leadSuit: null,
+          heartsBroken: null,
+          trickNumber: null,
+          rawScores: null,
+          heartsWinner: null,
+          handPoints: null,
+          heartsLastEvent: null,
         };
         if (event.kind === "trivia" && event.phase === "question") {
           store.setPartyGame({
@@ -427,6 +439,29 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             winner: event.winner,
             winReason: event.win_reason,
             lastEvent: event.phase === "reveal" ? event.last_event : null,
+          });
+        } else if (
+          event.kind === "hearts" &&
+          (event.phase === "passing" || event.phase === "trick" || event.phase === "reveal" || event.phase === "hand_over")
+        ) {
+          store.setPartyGame({
+            ...base,
+            ...empty,
+            handNumber: event.hand_number,
+            passDirection: event.pass_direction,
+            passToMemberId: event.pass_to_member_id,
+            heartsMyHand: event.my_hand,
+            handSizes: event.hand_sizes,
+            havePassed: event.have_passed,
+            currentTrick: event.current_trick,
+            leadSuit: event.lead_suit,
+            heartsBroken: event.hearts_broken,
+            trickNumber: event.trick_number,
+            currentPlayerId: event.current_player_id,
+            rawScores: event.raw_scores,
+            heartsWinner: event.winner,
+            handPoints: event.phase === "hand_over" ? event.hand_points : null,
+            heartsLastEvent: event.phase === "reveal" || event.phase === "hand_over" ? event.last_event : null,
           });
         } else {
           // Lobby - shared shape across every party-game kind.

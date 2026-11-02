@@ -14,6 +14,11 @@ import {
   GameKind,
   GameResult,
   GameStatus,
+  HeartsCard,
+  HeartsLastEvent,
+  HeartsPassDirection,
+  HeartsSuit,
+  HeartsTrickEntry,
   MemberRole,
   MessageOut,
   PartyGameKind,
@@ -198,6 +203,23 @@ export interface PartyGameState {
   winner: CodenamesTeam | null;
   winReason: "all_words_found" | "assassin_hit" | null;
   lastEvent: CodenamesLastEvent | null;
+  // Hearts fields - currentPlayerId/handNumber/handSizes are reused as-is
+  // from Uno above (identical meaning and type); everything else here is
+  // Hearts-only, prefixed where a name would otherwise collide with a
+  // differently-typed field from another kind (e.g. heartsMyHand vs
+  // Draft's/Uno's own my_hand card shapes).
+  passDirection: HeartsPassDirection | null;
+  passToMemberId: string | null;
+  heartsMyHand: HeartsCard[] | null;
+  havePassed: boolean | null;
+  currentTrick: HeartsTrickEntry[] | null;
+  leadSuit: HeartsSuit | null;
+  heartsBroken: boolean | null;
+  trickNumber: number | null;
+  rawScores: Record<string, number> | null;
+  heartsWinner: string | null;
+  handPoints: Record<string, number> | null;
+  heartsLastEvent: HeartsLastEvent | null;
 }
 
 // Card games (poker, the first) - a seated table whose chip stacks
