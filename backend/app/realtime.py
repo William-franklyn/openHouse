@@ -946,6 +946,7 @@ PARTY_GAME_LABELS: dict[str, dict[str, str]] = {
     "uno": {"emoji": "🔴", "name": "Uno"},
     "codenames": {"emoji": "🕵️", "name": "Codenames"},
     "hearts": {"emoji": "♥️", "name": "Hearts"},
+    "werewolf": {"emoji": "🐺", "name": "Werewolf"},
 }
 
 
