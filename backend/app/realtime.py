@@ -943,6 +943,7 @@ PARTY_REVEAL_PAUSE_SECONDS = 5
 PARTY_GAME_LABELS: dict[str, dict[str, str]] = {
     "trivia": {"emoji": "🧠", "name": "Trivia Night"},
     "draft": {"emoji": "🃏", "name": "Card Draft"},
+    "uno": {"emoji": "🔴", "name": "Uno"},
 }
 
 
