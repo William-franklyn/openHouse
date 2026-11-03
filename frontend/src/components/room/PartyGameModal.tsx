@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { Crown, RotateCcw, RotateCw, SkipForward, Trophy, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { CountdownBar } from "@/components/ui/CountdownBar";
+import { DrawingCanvas } from "@/components/room/DrawingCanvas";
 import { useRoomStore } from "@/lib/store";
 import { PARTY_GAME_REGISTRY } from "@/lib/partyGameRegistry";
 import {
@@ -12,6 +13,7 @@ import {
   CodenamesTeam,
   CodenamesTeamRoster,
   DraftCard,
+  DrawingLastEvent,
   HeartsCard,
   HeartsLastEvent,
   HeartsSuit,
@@ -109,6 +111,10 @@ export function PartyGameModal({
 
   function handleBuzzerAnswer(choiceIndex: number) {
     send("party_action", { party_game_id: game!.partyGameId, action: "answer", choice_index: choiceIndex });
+  }
+
+  function handleDrawingGuess(text: string) {
+    send("party_action", { party_game_id: game!.partyGameId, action: "guess", text });
   }
 
   function handleJoin() {
@@ -309,6 +315,19 @@ export function PartyGameModal({
           {game.status === "finished" && game.kind === "buzzer" && (
             <FinalView game={game} myMemberId={myMemberId} onPlayAgain={handlePlayAgain} onClose={onClose} />
           )}
+
+          {game.status === "active" &&
+            game.kind === "drawing" &&
+            (game.phase === "drawing" || game.phase === "reveal") && (
+              <DrawingView
+                game={game}
+                myMemberId={myMemberId}
+                isHost={isHost}
+                onGuess={handleDrawingGuess}
+                onSkip={handleSkip}
+                send={send}
+              />
+            )}
 
           {game.status === "finished" &&
             game.kind !== "codenames" &&
@@ -2396,6 +2415,127 @@ function SpadesFinalView({
           Play Again
         </button>
       </div>
+    </div>
+  );
+}
+
+function drawingEventText(event: DrawingLastEvent, namesByMemberId: Record<string, string>): string {
+  const drawerName = namesByMemberId[event.drawer_member_id] ?? "Someone";
+  const guesserCount = event.correct_guesser_ids.length;
+  if (guesserCount === 0) {
+    return `Nobody guessed it - the word was "${event.word}".`;
+  }
+  return `${drawerName}'s word was "${event.word}" - ${guesserCount} player${guesserCount === 1 ? "" : "s"} got it!`;
+}
+
+function DrawingView({
+  game,
+  myMemberId,
+  isHost,
+  onGuess,
+  onSkip,
+  send,
+}: {
+  game: NonNullable<ReturnType<typeof useRoomStore.getState>["myPartyGame"]>;
+  myMemberId: string;
+  isHost: boolean;
+  onGuess: (text: string) => void;
+  onSkip: () => void;
+  send: SendFn;
+}) {
+  const [guessText, setGuessText] = useState("");
+  const namesByMemberId = Object.fromEntries(game.scoreboard.map((r) => [r.member_id, r.name]));
+  const isReveal = game.phase === "reveal";
+  const amDrawer = !!game.amDrawer;
+  const drawerName = namesByMemberId[game.currentDrawerId ?? ""] ?? "Someone";
+  const canGuess = !amDrawer && !isReveal && !game.haveGuessedCorrectly;
+
+  function handleSubmitGuess(e: FormEvent) {
+    e.preventDefault();
+    const text = guessText.trim();
+    if (!text) return;
+    onGuess(text);
+    setGuessText("");
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-center text-[11px] font-bold uppercase tracking-wide text-violet-300/80">
+        Turn {game.turnNumber} of {game.totalTurns}
+      </p>
+
+      {isReveal && game.drawingLastEvent && (
+        <div
+          data-testid="drawing-last-event"
+          className="rounded-[var(--radius-md)] border border-emerald-400/30 bg-emerald-500/10 p-2.5 text-center text-[12px] text-emerald-200"
+        >
+          {drawingEventText(game.drawingLastEvent, namesByMemberId)}
+        </div>
+      )}
+
+      <p className="text-center text-[13px] font-semibold text-white">
+        {amDrawer ? "You're drawing!" : `${drawerName} is drawing`}
+      </p>
+      <p className="text-center text-[20px] font-black tracking-[0.3em] text-white" data-testid="drawing-word-hint">
+        {game.drawingWord}
+      </p>
+      {game.roundStartedAtMs !== null && game.roundDeadlineMs !== null && !isReveal && (
+        <CountdownBar startedAtMs={game.roundStartedAtMs} deadlineMs={game.roundDeadlineMs} />
+      )}
+
+      <DrawingCanvas
+        partyGameId={game.partyGameId}
+        interactive={amDrawer && !isReveal}
+        turnKey={`${game.turnNumber}`}
+        send={send}
+      />
+
+      {canGuess && (
+        <form onSubmit={handleSubmitGuess} className="flex items-center gap-2">
+          <input
+            value={guessText}
+            onChange={(e) => setGuessText(e.target.value)}
+            placeholder="Type your guess..."
+            maxLength={60}
+            data-testid="drawing-guess-input"
+            className="min-w-0 flex-1 rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[13px] text-white placeholder:text-white/30 focus:border-violet-400 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!guessText.trim()}
+            data-testid="drawing-guess-submit"
+            className="shrink-0 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-[13px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Guess
+          </button>
+        </form>
+      )}
+      {game.haveGuessedCorrectly && !isReveal && (
+        <p className="text-center text-[12px] text-emerald-300">You got it! Waiting on the others...</p>
+      )}
+
+      <div className="flex max-h-28 flex-col gap-1 overflow-y-auto rounded-[var(--radius-md)] border border-white/10 bg-white/5 p-2" data-testid="drawing-guess-feed">
+        {(game.guessLog ?? []).length === 0 && (
+          <p className="text-center text-[11px] text-white/30">Guesses will show up here...</p>
+        )}
+        {(game.guessLog ?? []).map((g, i) => (
+          <p key={i} className={`text-[12px] ${g.correct ? "font-semibold text-emerald-300" : "text-white/70"}`}>
+            <span className="font-medium">{namesByMemberId[g.member_id] ?? "Someone"}:</span> {g.text}
+          </p>
+        ))}
+      </div>
+
+      <ScoreList rows={game.scoreboard} myMemberId={myMemberId} />
+      {isHost && !isReveal && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="flex items-center justify-center gap-1.5 self-center rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/60 hover:bg-white/10"
+        >
+          <SkipForward size={13} />
+          Skip turn
+        </button>
+      )}
     </div>
   );
 }

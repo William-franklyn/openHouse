@@ -511,7 +511,16 @@ export interface LeaderboardResponse {
 // genuinely separate type, not a GameKind. One live party game per room
 // at a time (enforced server-side). ----
 
-export type PartyGameKind = "trivia" | "draft" | "uno" | "codenames" | "hearts" | "werewolf" | "spades" | "buzzer";
+export type PartyGameKind =
+  | "trivia"
+  | "draft"
+  | "uno"
+  | "codenames"
+  | "hearts"
+  | "werewolf"
+  | "spades"
+  | "buzzer"
+  | "drawing";
 export type PartyGameStatus = "lobby" | "active" | "finished" | "cancelled";
 export type PartyRoundPhase =
   | "lobby"
@@ -529,7 +538,8 @@ export type PartyRoundPhase =
   | "day_vote"
   | "bidding"
   | "buzzing"
-  | "answering";
+  | "answering"
+  | "drawing";
 
 export interface PartyScoreRow {
   member_id: string;
@@ -994,6 +1004,52 @@ export interface WSBuzzerRevealState extends WSBuzzerStateBase {
   last_event: BuzzerLastEvent;
 }
 
+// ---- Drawing & Guess: one player draws each turn on a shared canvas.
+// The pen strokes themselves are NOT part of this party-state union at
+// all - they're relayed live via the standalone WSDrawStroke/WSDrawClear
+// events below (see realtime.py's draw_stroke/draw_clear handlers for
+// why: a continuous pointer-coordinate stream has nothing in common
+// with a discrete per-round action). This union only covers the
+// turn-based game shell around that canvas. ----
+
+export interface DrawingGuessEntry {
+  member_id: string;
+  text: string;
+  correct: boolean;
+}
+
+export interface DrawingLastEvent {
+  kind: "turn_over";
+  drawer_member_id: string;
+  word: string;
+  correct_guesser_ids: string[];
+}
+
+interface WSDrawingStateBase extends WSPartyStateBase {
+  kind: "drawing";
+  turn_number: number;
+  total_turns: number;
+  current_drawer_id: string | null;
+  am_drawer: boolean;
+  word: string | null;
+  word_length: number | null;
+  round_started_at_ms: number | null;
+  round_deadline_ms: number | null;
+  guess_log: DrawingGuessEntry[];
+  have_guessed_correctly: boolean;
+  correct_guesser_ids: string[];
+}
+
+export interface WSDrawingDrawingState extends WSDrawingStateBase {
+  phase: "drawing";
+  last_event: null;
+}
+
+export interface WSDrawingRevealState extends WSDrawingStateBase {
+  phase: "reveal";
+  last_event: DrawingLastEvent;
+}
+
 export type WSPartyState =
   | WSPartyLobbyState
   | WSTriviaQuestionState
@@ -1020,7 +1076,30 @@ export type WSPartyState =
   | WSSpadesHandOverState
   | WSBuzzerBuzzingState
   | WSBuzzerAnsweringState
-  | WSBuzzerRevealState;
+  | WSBuzzerRevealState
+  | WSDrawingDrawingState
+  | WSDrawingRevealState;
+
+// Standalone stroke relay events (NOT part of WSPartyState - see the
+// Drawing & Guess section above for why).
+export interface DrawPoint {
+  x: number;
+  y: number;
+}
+
+export interface WSDrawStroke {
+  type: "draw_stroke";
+  party_game_id: string;
+  stroke_id: string;
+  points: DrawPoint[];
+  color: string;
+  width: number;
+}
+
+export interface WSDrawClear {
+  type: "draw_clear";
+  party_game_id: string;
+}
 
 export interface WSPartyCancelled {
   type: "party_cancelled";
@@ -1139,6 +1218,8 @@ export type WSServerEvent =
   | WSGameLinkWaiting
   | WSPartyState
   | WSPartyCancelled
+  | WSDrawStroke
+  | WSDrawClear
   | WSCardState
   | WSCardCancelled;
 

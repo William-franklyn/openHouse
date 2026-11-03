@@ -12,6 +12,8 @@ import {
   CodenamesTeamRoster,
   DraftCard,
   DraftRoundResult,
+  DrawingGuessEntry,
+  DrawingLastEvent,
   GameKind,
   GameResult,
   GameStatus,
@@ -44,6 +46,8 @@ import {
   WerewolfLastEvent,
   WerewolfRole,
   WerewolfWinner,
+  WSDrawClear,
+  WSDrawStroke,
 } from "./types";
 
 export interface IncomingCallInvite {
@@ -263,6 +267,19 @@ export interface PartyGameState {
   lockedOut: string[] | null;
   buzzedMemberId: string | null;
   buzzerLastEvent: BuzzerLastEvent | null;
+  // Drawing & Guess fields - roundStartedAtMs/roundDeadlineMs reused
+  // as-is from Trivia above (identical meaning and type). The pen
+  // strokes themselves are NOT here - see drawEventQueue above.
+  turnNumber: number | null;
+  totalTurns: number | null;
+  currentDrawerId: string | null;
+  amDrawer: boolean | null;
+  drawingWord: string | null;
+  wordLength: number | null;
+  guessLog: DrawingGuessEntry[] | null;
+  haveGuessedCorrectly: boolean | null;
+  correctGuesserIds: string[] | null;
+  drawingLastEvent: DrawingLastEvent | null;
 }
 
 // Card games (poker, the first) - a seated table whose chip stacks
@@ -387,6 +404,11 @@ interface RoomStoreState {
   // arrive in a rapid burst, and overwriting one with the next would
   // silently drop it instead of just showing a stale value.
   callSignalQueue: CallSignalEvent[];
+  // Same "queue, not a last-value slot" reasoning as callSignalQueue -
+  // draw_stroke/draw_clear events can arrive in a rapid burst while
+  // someone's drawing, and order matters (a clear must be applied before
+  // the strokes that follow it, not just whichever sets state last).
+  drawEventQueue: (WSDrawStroke | WSDrawClear)[];
   photos: RoomPhoto[];
 
   // An unanswered challenge TO me - a toast with accept/decline, same role
@@ -460,6 +482,8 @@ interface RoomStoreState {
   setIncomingCallInvite: (invite: IncomingCallInvite | null) => void;
   pushCallSignal: (event: CallSignalEvent) => void;
   clearCallSignals: () => void;
+  pushDrawEvent: (event: WSDrawStroke | WSDrawClear) => void;
+  clearDrawEvents: () => void;
   addPhoto: (photo: RoomPhoto) => void;
   mergePhotos: (photos: RoomPhoto[]) => void;
   removePhotoByMessageId: (messageId: string) => void;
@@ -502,6 +526,7 @@ const initialState = {
   myCallId: null,
   incomingCallInvite: null,
   callSignalQueue: [],
+  drawEventQueue: [] as (WSDrawStroke | WSDrawClear)[],
   photos: [] as RoomPhoto[],
   incomingGameInvite: null as IncomingGameInvite | null,
   pendingChallenge: null as { gameId: string; kind: GameKind; opponentName: string } | null,
@@ -623,6 +648,11 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
     set((state) => ({ callSignalQueue: [...state.callSignalQueue, event] })),
 
   clearCallSignals: () => set({ callSignalQueue: [] }),
+
+  pushDrawEvent: (event) =>
+    set((state) => ({ drawEventQueue: [...state.drawEventQueue, event] })),
+
+  clearDrawEvents: () => set({ drawEventQueue: [] }),
 
   addPhoto: (photo) =>
     set((state) =>

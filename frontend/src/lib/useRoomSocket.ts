@@ -377,6 +377,16 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           lockedOut: null,
           buzzedMemberId: null,
           buzzerLastEvent: null,
+          turnNumber: null,
+          totalTurns: null,
+          currentDrawerId: null,
+          amDrawer: null,
+          drawingWord: null,
+          wordLength: null,
+          guessLog: null,
+          haveGuessedCorrectly: null,
+          correctGuesserIds: null,
+          drawingLastEvent: null,
         };
         if (event.kind === "trivia" && event.phase === "question") {
           store.setPartyGame({
@@ -547,6 +557,23 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
             buzzedMemberId: event.buzzed_member_id,
             buzzerLastEvent: event.phase === "reveal" ? event.last_event : null,
           });
+        } else if (event.kind === "drawing" && (event.phase === "drawing" || event.phase === "reveal")) {
+          store.setPartyGame({
+            ...base,
+            ...empty,
+            turnNumber: event.turn_number,
+            totalTurns: event.total_turns,
+            currentDrawerId: event.current_drawer_id,
+            amDrawer: event.am_drawer,
+            drawingWord: event.word,
+            wordLength: event.word_length,
+            roundStartedAtMs: event.round_started_at_ms,
+            roundDeadlineMs: event.round_deadline_ms,
+            guessLog: event.guess_log,
+            haveGuessedCorrectly: event.have_guessed_correctly,
+            correctGuesserIds: event.correct_guesser_ids,
+            drawingLastEvent: event.phase === "reveal" ? event.last_event : null,
+          });
         } else {
           // Lobby - shared shape across every party-game kind.
           store.setPartyGame({ ...base, ...empty });
@@ -557,6 +584,10 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
         if (store.myPartyGame?.partyGameId === event.party_game_id) {
           store.setPartyGame(null);
         }
+        break;
+      case "draw_stroke":
+      case "draw_clear":
+        store.pushDrawEvent(event);
         break;
       case "card_state": {
         const base = {

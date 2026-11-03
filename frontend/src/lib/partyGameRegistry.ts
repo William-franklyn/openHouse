@@ -1,4 +1,4 @@
-import { Bell, Brain, Heart, LayoutGrid, LucideIcon, Moon, Shuffle, Spade, Users } from "lucide-react";
+import { Bell, Brain, Heart, LayoutGrid, LucideIcon, Moon, PenTool, Shuffle, Spade, Users } from "lucide-react";
 import { PartyGameKind } from "./types";
 
 export interface PartyGameRegistryEntry {
@@ -68,5 +68,12 @@ export const PARTY_GAME_REGISTRY: Record<PartyGameKind, PartyGameRegistryEntry> 
     icon: Bell,
     emoji: "🔔",
     minParticipants: 2,
+  },
+  drawing: {
+    kind: "drawing",
+    label: "Drawing & Guess",
+    icon: PenTool,
+    emoji: "🎨",
+    minParticipants: 3,
   },
 };
