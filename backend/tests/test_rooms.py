@@ -149,6 +149,46 @@ async def test_who_can_invite_setting(client):
     assert allowed.status_code == 200
 
 
+async def test_invite_code_is_tracked_on_open_policy_rooms_too(client, app):
+    """Regression test: open-policy rooms (the default) don't REQUIRE an
+    invite code to join, but a valid one passed through a shared link
+    should still be honored (marks the invite used, records who invited
+    whom) rather than being silently ignored - previously the frontend
+    never even sent it for non-invite_only rooms, so "Generate invite
+    link" was pure decoration outside invite_only rooms."""
+    from app.models import Invite, Member
+
+    data = await create_room(client)
+    room_id, code, owner_token = data["room"]["id"], data["room"]["code"], data["session_token"]
+    owner_member_id = data["member"]["member_id"]
+    assert data["room"]["join_policy"] == "open"
+
+    invite_resp = await client.post(f"/api/rooms/{room_id}/invites", headers=auth(owner_token))
+    assert invite_resp.status_code == 200
+    invite_code = invite_resp.json()["code"]
+
+    join_resp = await client.post(
+        f"/api/rooms/{code}/join",
+        json={"name": "Maria", "over_18": True, "invite_code": invite_code},
+    )
+    assert join_resp.status_code == 200
+    member_id = join_resp.json()["member_id"]
+
+    async with app.state.db.session() as session:
+        invite = await session.get(Invite, invite_code)
+        assert invite.used_by_member_id == member_id
+        member = await session.get(Member, member_id)
+        assert member.invited_by_member_id == owner_member_id
+
+    # A missing/invalid code on an open room never blocks the join (unlike
+    # invite_only) - it just goes untracked.
+    second = await client.post(
+        f"/api/rooms/{code}/join",
+        json={"name": "Someone", "over_18": True, "invite_code": "not-a-real-code"},
+    )
+    assert second.status_code == 200
+
+
 async def test_over_18_required(client):
     data = await create_room(client)
     code = data["room"]["code"]

@@ -95,18 +95,25 @@ async def join_room(
 
     invited_by_member_id = None
     invite: Invite | None = None
-    if room.join_policy == "invite_only":
-        if not invite_code:
-            raise DomainError("bad_invite", "An invite code is required to join this room.")
-        invite = await session.get(Invite, invite_code.strip())
-        if (
-            invite is None
-            or invite.room_id != room.id
-            or invite.used_by_member_id is not None
-            or invite.expires_at < utcnow()
-        ):
-            raise DomainError("bad_invite", "That invite code is wrong, used, or expired.")
-        invited_by_member_id = invite.created_by_member_id
+    if room.join_policy == "invite_only" and not invite_code:
+        raise DomainError("bad_invite", "An invite code is required to join this room.")
+    if invite_code:
+        candidate = await session.get(Invite, invite_code.strip())
+        valid = (
+            candidate is not None
+            and candidate.room_id == room.id
+            and candidate.used_by_member_id is None
+            and candidate.expires_at >= utcnow()
+        )
+        if not valid:
+            if room.join_policy == "invite_only":
+                raise DomainError("bad_invite", "That invite code is wrong, used, or expired.")
+            # Open/approval rooms don't require an invite to join at all, so
+            # a stale/bad code here just means it goes untracked rather than
+            # blocking the join - only invite_only rooms enforce it strictly.
+        else:
+            invite = candidate
+            invited_by_member_id = invite.created_by_member_id
 
     existing = (
         (await session.execute(select(Member).where(Member.room_id == room.id))).scalars().all()

@@ -190,10 +190,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     );
   }
 
-  const canInvite =
-    myRole === "owner" ||
-    myRole === "mod" ||
-    (room.join_policy === "invite_only" && room.invite_by === "members");
+  const canInvite = myRole === "owner" || myRole === "mod" || room.invite_by === "members";
   const canManage = myRole === "owner" || myRole === "mod";
 
   function handleLogout() {

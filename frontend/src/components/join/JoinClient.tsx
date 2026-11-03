@@ -69,7 +69,7 @@ export function JoinClient({
       const result = await api.joinRoom(code, {
         name: anonymous ? null : name.trim() || null,
         over_18: over18,
-        invite_code: preview.join_policy === "invite_only" ? inviteCode.trim() || null : null,
+        invite_code: inviteCode.trim() || null,
         device_id: getDeviceId(),
       });
       saveSession({
