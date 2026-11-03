@@ -3,6 +3,7 @@ from app.party_engines.base import PartyEngine
 from app.party_engines.buzzer_engine import BuzzerEngine
 from app.party_engines.codenames_engine import CodenamesEngine
 from app.party_engines.draft_engine import DraftEngine
+from app.party_engines.drawing_engine import DrawingEngine
 from app.party_engines.hearts_engine import HeartsEngine
 from app.party_engines.spades_engine import SpadesEngine
 from app.party_engines.trivia_engine import TriviaEngine
@@ -18,6 +19,7 @@ PARTY_ENGINES: dict[str, PartyEngine] = {
     "werewolf": WerewolfEngine(),
     "spades": SpadesEngine(),
     "buzzer": BuzzerEngine(),
+    "drawing": DrawingEngine(),
 }
 
 

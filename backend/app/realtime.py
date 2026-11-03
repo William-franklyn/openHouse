@@ -949,6 +949,7 @@ PARTY_GAME_LABELS: dict[str, dict[str, str]] = {
     "werewolf": {"emoji": "🐺", "name": "Werewolf"},
     "spades": {"emoji": "♠️", "name": "Spades"},
     "buzzer": {"emoji": "🔔", "name": "Buzzer Race"},
+    "drawing": {"emoji": "🎨", "name": "Drawing & Guess"},
 }
 
 
@@ -1100,6 +1101,70 @@ async def handle_cancel_party_game(session, settings, redis, hub, room, actor, d
     hub.cancel_party_timer(party_game.id)
     party_game = await party_games_mod.cancel_game(session, party_game, actor)
     await hub.publish(room.id, {"type": "party_cancelled", "party_game_id": party_game.id})
+
+
+# ---- Drawing & Guess strokes - a pure, ephemeral relay with NO DB
+# persistence and NO involvement from party_games.py/DrawingEngine at
+# all, the same "ephemeral, no persistence" shape already used for
+# WebRTC call signaling (handle_call_offer/_relay_to_peer above). A
+# continuous stream of pointer coordinates has nothing in common with a
+# discrete per-round party_action and would be wildly inefficient to
+# route through the generic party_state rebuild-and-broadcast machinery
+# (a full redacted-state rebuild + DB write per mouse-move). Reconnecting
+# mid-turn means seeing a blank canvas plus future strokes only - no
+# replay of strokes drawn before you joined, a deliberate v1 tradeoff.
+
+
+async def _require_active_drawer(session, room, actor):
+    """Both stroke handlers share the same authorization: there must be a
+    live, active Drawing game in this room, it must actually be the
+    "drawing" phase (not mid-reveal), and the actor must be the current
+    drawer. Returns the live PartyGame + its participant id list."""
+    party_game = await party_games_mod.get_live_party_game_for_room(session, room.id)
+    if party_game is None or party_game.kind != "drawing" or party_game.status != "active":
+        raise DomainError("bad_request", "No active drawing game in this room.")
+    state = json.loads(party_game.state_json)
+    if state.get("phase") != "drawing" or state.get("current_drawer") != actor.id:
+        raise DomainError("not_allowed", "Only the current drawer can draw right now.")
+    return party_game, json.loads(party_game.participants_json)
+
+
+async def _relay_to_other_participants(hub, room, actor, participants, event) -> None:
+    for member_id in participants:
+        if member_id == actor.id:
+            continue
+        await hub.publish(room.id, event, to_member_id=member_id)
+
+
+async def handle_draw_stroke(session, settings, redis, hub, room, actor, data):
+    party_game, participants = await _require_active_drawer(session, room, actor)
+    points = data.get("points")
+    stroke_id = data.get("stroke_id")
+    color = data.get("color")
+    width = data.get("width")
+    if not isinstance(points, list) or not points:
+        raise DomainError("bad_request", "Missing or invalid points.")
+    if not isinstance(stroke_id, str) or not stroke_id:
+        raise DomainError("bad_request", "Missing or invalid stroke_id.")
+    if not isinstance(color, str) or not color:
+        raise DomainError("bad_request", "Missing or invalid color.")
+    if not isinstance(width, (int, float)) or isinstance(width, bool):
+        raise DomainError("bad_request", "Missing or invalid width.")
+    event = {
+        "type": "draw_stroke",
+        "party_game_id": party_game.id,
+        "stroke_id": stroke_id,
+        "points": points,
+        "color": color,
+        "width": width,
+    }
+    await _relay_to_other_participants(hub, room, actor, participants, event)
+
+
+async def handle_draw_clear(session, settings, redis, hub, room, actor, data):
+    party_game, participants = await _require_active_drawer(session, room, actor)
+    event = {"type": "draw_clear", "party_game_id": party_game.id}
+    await _relay_to_other_participants(hub, room, actor, participants, event)
 
 
 async def cleanup_party_lobby_on_disconnect(session, settings, hub, room_id: str, member_id: str) -> None:
@@ -1316,6 +1381,8 @@ HANDLERS = {
     "party_action": handle_party_action,
     "skip_party_round": handle_skip_party_round,
     "cancel_party_game": handle_cancel_party_game,
+    "draw_stroke": handle_draw_stroke,
+    "draw_clear": handle_draw_clear,
     "start_card_game": handle_start_card_game,
     "join_card_game": handle_join_card_game,
     "leave_card_game": handle_leave_card_game,
