@@ -11,6 +11,7 @@ export function ConversationHeader({
   onOpenStartCall,
   onOpenPhotoWall,
   onOpenGames,
+  hasLiveGame,
   onOpenMusicPicker,
 }: {
   onOpenSidebar: () => void;
@@ -19,12 +20,12 @@ export function ConversationHeader({
   onOpenStartCall: () => void;
   onOpenPhotoWall: () => void;
   onOpenGames: () => void;
+  hasLiveGame: boolean;
   onOpenMusicPicker: () => void;
 }) {
   const channels = useRoomStore((s) => s.channels);
   const activeChannelId = useRoomStore((s) => s.activeChannelId);
   const onlineCount = useRoomStore((s) => s.online.length);
-  const myGameId = useRoomStore((s) => s.myGameId);
   const music = useRoomStore((s) => s.music);
   const channel = channels.find((c) => c.id === activeChannelId);
 
@@ -70,7 +71,7 @@ export function ConversationHeader({
           </button>
         </Tooltip>
 
-        <Tooltip label={myGameId ? "Back to your chess game" : "Play chess"}>
+        <Tooltip label={hasLiveGame ? "Back to your game" : "Games"}>
           <button
             type="button"
             onClick={onOpenGames}
@@ -78,7 +79,7 @@ export function ConversationHeader({
             className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-muted"
           >
             <ChessKnight size={18} />
-            {myGameId && (
+            {hasLiveGame && (
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" aria-hidden />
             )}
           </button>

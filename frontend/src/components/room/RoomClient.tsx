@@ -68,6 +68,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const myMemberId = useRoomStore((s) => s.myMemberId);
   const myCallId = useRoomStore((s) => s.myCallId);
   const myGameId = useRoomStore((s) => s.myGameId);
+  const game = useRoomStore((s) => s.game);
   const linkWaitingGame = useRoomStore((s) => s.linkWaitingGame);
   const myPartyGame = useRoomStore((s) => s.myPartyGame);
   const myCardGame = useRoomStore((s) => s.myCardGame);
@@ -193,6 +194,27 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const canInvite = myRole === "owner" || myRole === "mod" || room.invite_by === "members";
   const canManage = myRole === "owner" || myRole === "mod";
 
+  // The Games header button should only jump back into a game that's
+  // still actually live - once it's finished/cancelled it's stale data
+  // sitting in the store (none of these slots get cleared on completion,
+  // only on disconnect-equivalent events), and routing into it here would
+  // permanently block the picker for anyone who's ever finished a game.
+  const hasLiveBoardGame = Boolean(myGameId && game && !game.gameOver);
+  const hasLivePartyGame = Boolean(
+    myPartyGame &&
+      myPartyGame.status !== "finished" &&
+      myPartyGame.status !== "cancelled" &&
+      myMemberId &&
+      myPartyGame.participantIds.includes(myMemberId)
+  );
+  const hasLiveCardGame = Boolean(
+    myCardGame &&
+      myCardGame.status !== "finished" &&
+      myCardGame.status !== "cancelled" &&
+      myMemberId &&
+      myCardGame.participantIds.includes(myMemberId)
+  );
+
   function handleLogout() {
     send("leave");
     clearSession(roomId);
@@ -223,14 +245,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
           onOpenStartCall={() => setShowStartCall(true)}
           onOpenPhotoWall={() => setShowPhotoWall(true)}
           onOpenGames={() =>
-            myGameId
+            hasLiveBoardGame
               ? setShowGameBoard(true)
-              : myPartyGame && myMemberId && myPartyGame.participantIds.includes(myMemberId)
+              : hasLivePartyGame
                 ? setShowPartyGameModal(true)
-                : myCardGame && myMemberId && myCardGame.participantIds.includes(myMemberId)
+                : hasLiveCardGame
                   ? setShowPokerTable(true)
                   : setShowGamesModal(true)
           }
+          hasLiveGame={hasLiveBoardGame || hasLivePartyGame || hasLiveCardGame}
           onOpenMusicPicker={() => setShowMusicPicker(true)}
         />
         <LiveGamesBanner send={send} />

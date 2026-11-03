@@ -170,6 +170,18 @@ class BackgammonEngine:
             next_seat = 1 - seat
             dice = _roll()
             remaining = list(dice)
+            # A fresh roll can leave the other player with no legal move
+            # at all (e.g. blocked by a prime) - real backgammon forfeits
+            # that whole turn outright, so keep flipping/re-rolling rather
+            # than stranding the game on a turn nobody can act on. Capped
+            # defensively; a real closed-out position resolves in a
+            # handful of rolls, never anywhere near this bound.
+            guard = 0
+            while not self._compute_legal_moves(points, bar, next_seat, remaining) and guard < 50:
+                next_seat = 1 - next_seat
+                dice = _roll()
+                remaining = list(dice)
+                guard += 1
 
         return {
             "points": points,
