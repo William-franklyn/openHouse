@@ -31,6 +31,11 @@ export interface ChannelOut {
   name: string;
 }
 
+export interface MessageReactionSummary {
+  emoji: string;
+  member_ids: string[];
+}
+
 export interface MessageOut {
   id: string;
   channel_id: string;
@@ -41,6 +46,7 @@ export interface MessageOut {
   text: string | null;
   file_id: string | null;
   created_at: string;
+  reactions: MessageReactionSummary[];
 }
 
 export interface CreateRoomResponse {
@@ -143,6 +149,15 @@ export interface WSMessageDeleted {
 export interface WSPins {
   type: "pins";
   message_ids: string[];
+}
+
+export interface WSReaction {
+  type: "reaction";
+  channel_id: string;
+  message_id: string;
+  emoji: string;
+  member_id: string;
+  added: boolean;
 }
 
 export interface PresenceMember {
@@ -1187,6 +1202,7 @@ export type WSServerEvent =
   | WSMessage
   | WSMessageDeleted
   | WSPins
+  | WSReaction
   | WSPresence
   | WSMemberJoined
   | WSMemberLeft

@@ -227,7 +227,7 @@ async def resolve_member_names(session, member_ids: set) -> dict:
     return {m.id: m.display_name for m in result.scalars().all()}
 
 
-def message_out(msg, from_name: str | None = None) -> dict:
+def message_out(msg, from_name: str | None = None, reactions: list[dict] | None = None) -> dict:
     return {
         "id": msg.id,
         "channel_id": msg.channel_id,
@@ -238,6 +238,7 @@ def message_out(msg, from_name: str | None = None) -> dict:
         "text": msg.text,
         "file_id": msg.file_id,
         "created_at": msg.created_at.isoformat(),
+        "reactions": reactions or [],
     }
 
 
@@ -436,7 +437,10 @@ def register_routes(app: FastAPI) -> None:
     ):
         rows = await messages_mod.history(session, channel_id, before_seq, settings.HISTORY_PAGE_SIZE)
         names = await resolve_member_names(session, {m.member_id for m in rows})
-        return {"messages": [message_out(m, names.get(m.member_id)) for m in rows]}
+        reactions = await messages_mod.reactions_for_messages(session, [m.id for m in rows])
+        return {
+            "messages": [message_out(m, names.get(m.member_id), reactions.get(m.id)) for m in rows]
+        }
 
     @app.get("/api/rooms/{room_id}/photos")
     async def room_photos_route(

@@ -1,11 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Pin, PinOff, Trash2, Flag, FileText } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Pin, PinOff, Trash2, Flag, FileText, SmilePlus } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { api } from "@/lib/api";
 import { DownloadResponse, MemberRole, MessageOut } from "@/lib/types";
+
+// Mirrors backend/app/messages.py's REACTION_EMOJI exactly - a fixed
+// reaction-bar set rather than a full emoji picker, same "small curated
+// set, no free text" tradeoff the server enforces.
+const REACTION_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
+
+function ReactionPicker({ onPick, onClose }: { onPick: (emoji: string) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="absolute right-0 top-full z-10 mt-1 flex gap-0.5 rounded-[var(--radius-sm)] border border-border bg-surface p-1 shadow-[var(--shadow-md)]"
+    >
+      {REACTION_EMOJI.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          onClick={() => {
+            onPick(emoji);
+            onClose();
+          }}
+          aria-label={`React with ${emoji}`}
+          className="flex h-8 w-8 items-center justify-center rounded text-base hover:bg-surface-muted"
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function formatTime(iso: string): string {
   try {
@@ -107,6 +146,7 @@ export function MessageItem({
   onUnpin,
   onDelete,
   onReport,
+  onToggleReaction,
 }: {
   msg: MessageOut;
   token: string;
@@ -118,7 +158,10 @@ export function MessageItem({
   onUnpin: (messageId: string) => void;
   onDelete: (messageId: string) => void;
   onReport: (messageId: string) => void;
+  onToggleReaction: (messageId: string, emoji: string) => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   if (msg.kind === "system") {
     return (
       <div className="flex justify-center py-1.5">
@@ -168,10 +211,50 @@ export function MessageItem({
             {msg.text}
           </p>
         )}
+        {msg.reactions.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {msg.reactions.map((r) => {
+              const mine = myMemberId !== null && r.member_ids.includes(myMemberId);
+              return (
+                <button
+                  key={r.emoji}
+                  type="button"
+                  onClick={() => onToggleReaction(msg.id, r.emoji)}
+                  className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[12px] transition-colors ${
+                    mine
+                      ? "border-accent bg-accent-soft text-accent"
+                      : "border-border bg-surface-muted text-muted hover:border-accent/50"
+                  }`}
+                >
+                  <span>{r.emoji}</span>
+                  <span className="text-[11px] font-medium">{r.member_ids.length}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {(canPin || canDelete || !isMine) && (
         <div className="absolute right-3 top-0 hidden -translate-y-1/2 items-center gap-0.5 rounded-[var(--radius-sm)] border border-border bg-surface p-0.5 shadow-[var(--shadow-sm)] group-hover:flex">
+          <div className="relative">
+            <Tooltip label="React">
+              <button
+                type="button"
+                onClick={() => setPickerOpen((v) => !v)}
+                aria-label="Add reaction"
+                className="flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-surface-muted hover:text-accent"
+              >
+                <SmilePlus size={14} />
+              </button>
+            </Tooltip>
+            {pickerOpen && (
+              <ReactionPicker
+                onPick={(emoji) => onToggleReaction(msg.id, emoji)}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
+          </div>
           {canPin && (
             <Tooltip label={isPinned ? "Unpin" : "Pin"}>
               <button

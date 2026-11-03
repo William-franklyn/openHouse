@@ -23,6 +23,7 @@ export function MessageList({
   onUnpin,
   onDeleteMessage,
   onReportMessage,
+  onToggleReaction,
 }: {
   roomId: string;
   channelId: string;
@@ -31,6 +32,7 @@ export function MessageList({
   onUnpin: (messageId: string) => void;
   onDeleteMessage: (messageId: string) => void;
   onReportMessage: (messageId: string) => void;
+  onToggleReaction: (messageId: string, emoji: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
@@ -128,6 +130,7 @@ export function MessageList({
                 onUnpin={onUnpin}
                 onDelete={onDeleteMessage}
                 onReport={onReportMessage}
+                onToggleReaction={onToggleReaction}
               />
             </div>
           );

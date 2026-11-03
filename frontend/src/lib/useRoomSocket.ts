@@ -39,11 +39,15 @@ export function useRoomSocket(token: string | null): { send: SendFn } {
           text: event.text,
           file_id: event.file_id,
           created_at: event.created_at,
+          reactions: [],
         });
         break;
       case "message_deleted":
         store.removeMessage(event.channel_id, event.message_id);
         store.removePhotoByMessageId(event.message_id);
+        break;
+      case "reaction":
+        store.applyReaction(event.channel_id, event.message_id, event.emoji, event.member_id, event.added);
         break;
       case "pins":
         store.setPins(event.message_ids);

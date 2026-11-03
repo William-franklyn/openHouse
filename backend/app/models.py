@@ -153,6 +153,23 @@ class Pin(Base):
     __table_args__ = (UniqueConstraint("room_id", "message_id", name="uq_pin_room_message"),)
 
 
+class MessageReaction(Base):
+    __tablename__ = "message_reactions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    message_id: Mapped[str] = mapped_column(ForeignKey("messages.id"), nullable=False, index=True)
+    member_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    # One of a small fixed emoji set (REACTION_EMOJI in messages.py) - not
+    # free-form text, so there's no unicode/moderation surface to worry
+    # about, same reasoning as every other short enum-ish column here.
+    emoji: Mapped[str] = mapped_column(String(8), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("message_id", "member_id", "emoji", name="uq_reaction_message_member_emoji"),
+    )
+
+
 class FileAsset(Base):
     __tablename__ = "files"
 

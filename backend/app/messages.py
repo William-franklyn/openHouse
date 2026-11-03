@@ -1,10 +1,18 @@
-"""Channels, messages (with gap-free per-channel seq), pins, deletion."""
+"""Channels, messages (with gap-free per-channel seq), pins, deletion, reactions."""
+
+from collections import defaultdict
 
 from sqlalchemy import select, update
 
 from app import metrics
 from app.errors import DomainError
-from app.models import Channel, Member, Message, Pin, new_id, utcnow
+from app.models import Channel, Member, Message, MessageReaction, Pin, new_id, utcnow
+
+# A fixed reaction-bar set (same idea as every other short-enum column in
+# this codebase) rather than free-form emoji text - no unicode validation
+# or moderation surface to worry about, and it matches the small picker
+# every mainstream chat app actually ships.
+REACTION_EMOJI = ("👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀")
 
 
 async def list_channels(session, room_id: str) -> list[Channel]:
@@ -152,3 +160,45 @@ async def delete_message(session, actor: Member, message: Message) -> None:
         raise DomainError("not_allowed", "You can't delete that message.")
     message.deleted_at = utcnow()
     await session.commit()
+
+
+async def toggle_reaction(session, actor: Member, message: Message, emoji: str) -> bool:
+    """Returns True if the reaction was just added, False if it was
+    removed - clicking your own existing reaction toggles it off, the one
+    gesture covers both directions, same as every mainstream chat app."""
+    if emoji not in REACTION_EMOJI:
+        raise DomainError("bad_request", "Not a supported reaction.")
+    result = await session.execute(
+        select(MessageReaction).where(
+            MessageReaction.message_id == message.id,
+            MessageReaction.member_id == actor.id,
+            MessageReaction.emoji == emoji,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing is not None:
+        await session.delete(existing)
+        await session.commit()
+        return False
+    session.add(MessageReaction(id=new_id(), message_id=message.id, member_id=actor.id, emoji=emoji))
+    await session.commit()
+    return True
+
+
+async def reactions_for_messages(session, message_ids: list[str]) -> dict[str, list[dict]]:
+    """{message_id: [{"emoji": "...", "member_ids": [...]}, ...]} for every
+    message in message_ids that has at least one reaction - one batched
+    query to attach reaction summaries onto a whole history page, instead
+    of a query per message."""
+    if not message_ids:
+        return {}
+    result = await session.execute(
+        select(MessageReaction).where(MessageReaction.message_id.in_(message_ids))
+    )
+    grouped: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    for reaction in result.scalars().all():
+        grouped[reaction.message_id][reaction.emoji].append(reaction.member_id)
+    return {
+        message_id: [{"emoji": emoji, "member_ids": member_ids} for emoji, member_ids in by_emoji.items()]
+        for message_id, by_emoji in grouped.items()
+    }

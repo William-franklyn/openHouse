@@ -277,6 +277,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
               onUnpin={(messageId) => send("unpin", { message_id: messageId })}
               onDeleteMessage={(messageId) => send("delete_message", { message_id: messageId })}
               onReportMessage={(messageId) => setReportTarget({ messageId })}
+              onToggleReaction={(messageId, emoji) =>
+                send("toggle_reaction", { message_id: messageId, emoji })
+              }
             />
             {status === "reconnecting" && (
               <p className="bg-accent-soft px-4 py-1.5 text-center text-[12px] font-medium text-accent">

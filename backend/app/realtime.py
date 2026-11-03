@@ -448,6 +448,26 @@ async def handle_delete_message(session, settings, redis, hub, room, actor, data
     )
 
 
+async def handle_toggle_reaction(session, settings, redis, hub, room, actor, data):
+    message = await session.get(Message, data.get("message_id"))
+    if message is None:
+        raise DomainError("bad_request", "Unknown message.")
+    channel = await _get_channel_in_room(session, room.id, message.channel_id)
+    emoji = data.get("emoji")
+    added = await messages_mod.toggle_reaction(session, actor, message, emoji)
+    await hub.publish(
+        room.id,
+        {
+            "type": "reaction",
+            "channel_id": channel.id,
+            "message_id": message.id,
+            "emoji": emoji,
+            "member_id": actor.id,
+            "added": added,
+        },
+    )
+
+
 async def _publish_pins(session, hub, room):
     pins = await messages_mod.list_pins(session, room.id)
     await hub.publish(room.id, {"type": "pins", "message_ids": [p.message_id for p in pins]})
@@ -1388,6 +1408,7 @@ async def handle_leave(session, settings, redis, hub, room, actor, data):
 HANDLERS = {
     "send_message": handle_send_message,
     "delete_message": handle_delete_message,
+    "toggle_reaction": handle_toggle_reaction,
     "pin": handle_pin,
     "unpin": handle_unpin,
     "approve_member": handle_approve_member,

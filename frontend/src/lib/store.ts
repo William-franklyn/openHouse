@@ -24,6 +24,7 @@ import {
   HeartsTrickEntry,
   MemberRole,
   MessageOut,
+  MessageReactionSummary,
   PartyGameKind,
   PartyGameStatus,
   PartyRoundPhase,
@@ -463,6 +464,7 @@ interface RoomStoreState {
   prependHistory: (channelId: string, messages: MessageOut[]) => void;
   receiveMessage: (msg: MessageOut) => void;
   removeMessage: (channelId: string, messageId: string) => void;
+  applyReaction: (channelId: string, messageId: string, emoji: string, memberId: string, added: boolean) => void;
   setPins: (ids: string[]) => void;
   setPresence: (online: PresenceMember[]) => void;
   addChannel: (channel: ChannelOut) => void;
@@ -601,6 +603,37 @@ export const useRoomStore = create<RoomStoreState>((set, get) => ({
         [channelId]: (state.messagesByChannel[channelId] ?? []).filter((m) => m.id !== messageId),
       },
     })),
+
+  applyReaction: (channelId, messageId, emoji, memberId, added) =>
+    set((state) => {
+      const existing = state.messagesByChannel[channelId] ?? [];
+      const msgIdx = existing.findIndex((m) => m.id === messageId);
+      if (msgIdx === -1) return {};
+      const reactions = existing[msgIdx].reactions ?? [];
+      const emojiIdx = reactions.findIndex((r) => r.emoji === emoji);
+      let nextReactions: MessageReactionSummary[];
+      if (added) {
+        nextReactions =
+          emojiIdx === -1
+            ? [...reactions, { emoji, member_ids: [memberId] }]
+            : reactions[emojiIdx].member_ids.includes(memberId)
+              ? reactions
+              : reactions.map((r, i) =>
+                  i === emojiIdx ? { ...r, member_ids: [...r.member_ids, memberId] } : r
+                );
+      } else if (emojiIdx === -1) {
+        nextReactions = reactions;
+      } else {
+        const remaining = reactions[emojiIdx].member_ids.filter((id) => id !== memberId);
+        nextReactions =
+          remaining.length > 0
+            ? reactions.map((r, i) => (i === emojiIdx ? { ...r, member_ids: remaining } : r))
+            : reactions.filter((_, i) => i !== emojiIdx);
+      }
+      const nextMessages = [...existing];
+      nextMessages[msgIdx] = { ...existing[msgIdx], reactions: nextReactions };
+      return { messagesByChannel: { ...state.messagesByChannel, [channelId]: nextMessages } };
+    }),
 
   setPins: (ids) => set({ pinnedIds: ids }),
 
