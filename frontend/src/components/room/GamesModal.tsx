@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Type, Hand, Target, Dices, LucideIcon } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { GAME_REGISTRY } from "@/lib/gameRegistry";
 import { PARTY_GAME_REGISTRY } from "@/lib/partyGameRegistry";
@@ -11,31 +10,39 @@ import { CardGameKind, GameKind, PartyGameKind } from "@/lib/types";
 interface GameOption {
   id: string;
   name: string;
-  icon: LucideIcon;
+  emoji: string;
   live: boolean;
+  minPlayers?: number;
   partyKind?: PartyGameKind;
   cardKind?: CardGameKind;
 }
 
-const LIVE_GAMES: GameOption[] = Object.values(GAME_REGISTRY).map((entry) => ({
+interface Section {
+  label: string;
+  heading: string;
+  games: GameOption[];
+}
+
+const BOARD_GAMES: GameOption[] = Object.values(GAME_REGISTRY).map((entry) => ({
   id: entry.kind,
   name: entry.label,
-  icon: entry.icon,
+  emoji: entry.emoji,
   live: true,
 }));
 
-const LIVE_PARTY_GAMES: GameOption[] = Object.values(PARTY_GAME_REGISTRY).map((entry) => ({
+const PARTY_GAMES: GameOption[] = Object.values(PARTY_GAME_REGISTRY).map((entry) => ({
   id: entry.kind,
   name: entry.label,
-  icon: entry.icon,
+  emoji: entry.emoji,
   live: true,
+  minPlayers: entry.minParticipants,
   partyKind: entry.kind,
 }));
 
-const LIVE_CARD_GAMES: GameOption[] = Object.values(CARD_GAME_REGISTRY).map((entry) => ({
+const CARD_GAMES: GameOption[] = Object.values(CARD_GAME_REGISTRY).map((entry) => ({
   id: entry.kind,
   name: entry.label,
-  icon: entry.icon,
+  emoji: entry.emoji,
   live: true,
   cardKind: entry.kind,
 }));
@@ -45,13 +52,18 @@ const LIVE_CARD_GAMES: GameOption[] = Object.values(CARD_GAME_REGISTRY).map((ent
 // cardGameRegistry.ts is the only change needed for it to show up above
 // instead of here.
 const COMING_SOON: GameOption[] = [
-  { id: "wordguess", name: "Word Guess", icon: Type, live: false },
-  { id: "rps", name: "Rock Paper Scissors", icon: Hand, live: false },
-  { id: "darts", name: "Darts", icon: Target, live: false },
-  { id: "ludo", name: "Ludo", icon: Dices, live: false },
+  { id: "wordguess", name: "Word Guess", emoji: "📝", live: false },
+  { id: "rps", name: "Rock Paper Scissors", emoji: "✂️", live: false },
+  { id: "darts", name: "Darts", emoji: "🎯", live: false },
+  { id: "ludo", name: "Ludo", emoji: "🎲", live: false },
 ];
 
-const GAMES: GameOption[] = [...LIVE_GAMES, ...LIVE_PARTY_GAMES, ...LIVE_CARD_GAMES, ...COMING_SOON];
+const SECTIONS: Section[] = [
+  { label: "🎯", heading: "Board Games", games: BOARD_GAMES },
+  { label: "🎉", heading: "Party Games", games: PARTY_GAMES },
+  { label: "🃏", heading: "Card Games", games: CARD_GAMES },
+  { label: "✨", heading: "Coming Soon", games: COMING_SOON },
+];
 
 export function GamesModal({
   open,
@@ -85,42 +97,54 @@ export function GamesModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="🎮 Games">
-      <div className="flex flex-col gap-3">
+    <Modal open={open} onClose={onClose} title="🎮 Game Lounge" maxWidthClassName="w-[min(94vw,640px)]">
+      <div className="flex flex-col gap-4">
         <p className="text-[13px] text-muted">
-          Play something together while you chat. More games are on the way.
+          Pick something to play together - everyone in the room can jump in.
         </p>
 
-        <div className="grid grid-cols-3 gap-2.5">
-          {GAMES.map((game) => {
-            const Icon = game.icon;
-            return (
-              <button
-                key={game.id}
-                type="button"
-                onClick={() => pick(game)}
-                className={`relative flex flex-col items-center gap-1.5 rounded-[var(--radius-md)] border p-3 text-center transition-colors ${
-                  game.live
-                    ? "border-accent/40 bg-accent-soft hover:border-accent"
-                    : "border-border text-muted hover:bg-surface-muted"
-                }`}
-              >
-                <Icon size={22} className={game.live ? "text-accent" : "text-muted"} />
-                <span className={`text-[11px] font-medium leading-tight ${game.live ? "text-foreground" : "text-muted"}`}>
-                  {game.name}
-                </span>
-                {game.live ? (
-                  <span className="absolute -top-1.5 -right-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold text-accent-foreground">
-                    PLAY
-                  </span>
-                ) : (
-                  <span className="absolute -top-1.5 -right-1.5 rounded-full border border-border bg-surface px-1.5 py-0.5 text-[9px] font-medium text-muted">
-                    SOON
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <div className="-mr-1.5 flex max-h-[65vh] flex-col gap-5 overflow-y-auto pr-1.5">
+          {SECTIONS.map((section) => (
+            <div key={section.heading}>
+              <h3 className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted">
+                <span className="text-sm leading-none">{section.label}</span>
+                {section.heading}
+              </h3>
+              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
+                {section.games.map((game) => (
+                  <button
+                    key={game.id}
+                    type="button"
+                    onClick={() => pick(game)}
+                    className={`group relative flex flex-col items-center gap-2 rounded-[var(--radius-lg)] border p-3.5 text-center transition-all duration-150 ${
+                      game.live
+                        ? "border-border bg-surface-muted hover:-translate-y-0.5 hover:border-accent hover:bg-accent-soft hover:shadow-[var(--shadow-md)]"
+                        : "border-border/60 bg-surface-muted/50 opacity-55 hover:opacity-80"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-12 w-12 items-center justify-center rounded-full bg-surface text-[26px] leading-none shadow-[var(--shadow-sm)] transition-transform duration-150 ${
+                        game.live ? "group-hover:scale-110" : ""
+                      }`}
+                    >
+                      {game.emoji}
+                    </span>
+                    <span className="text-[12.5px] font-semibold leading-tight text-foreground">
+                      {game.name}
+                    </span>
+                    {game.minPlayers && (
+                      <span className="text-[10px] font-medium text-muted">{game.minPlayers}+ players</span>
+                    )}
+                    {!game.live && (
+                      <span className="absolute -top-1.5 -right-1.5 rounded-full border border-border bg-surface px-1.5 py-0.5 text-[9px] font-medium text-muted">
+                        SOON
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
 
         {toast && (

@@ -13,6 +13,11 @@ export const CARD_GAME_REGISTRY: Record<CardGameKind, CardGameRegistryEntry> = {
     kind: "poker",
     label: "Poker",
     icon: Spade,
-    emoji: "\u{1fa99}",
+    // Not a poker chip (no dedicated emoji exists) and deliberately not
+    // the newer U+1FA99 coin emoji either - that one's from Unicode 13.0
+    // (2020) and still renders as a blank box on some systems' font
+    // stacks. 🎰 is long-established (Unicode 6.0) and reads as "casino
+    // game" clearly enough, without colliding with Draft's 🃏 above it.
+    emoji: "🎰",
   },
 };
