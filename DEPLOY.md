@@ -28,8 +28,30 @@ None of these require a credit card for the free tier. The only real constraint:
 1. [dash.cloudflare.com](https://dash.cloudflare.com) → **R2 Object Storage** → **Create bucket** (any name, e.g. `openhouse-files`).
 2. **Manage API Tokens** → **Create API Token** → read/write access to that bucket.
 3. Note down: **Endpoint URL** (`https://<account-id>.r2.cloudflarestorage.com`), **Bucket name**, **Access Key ID**, **Secret Access Key**.
+4. **Bucket → Settings → CORS Policy → Add CORS policy.** This step is easy to
+   miss and the app will look broken without it: uploads succeed and the
+   `/api/files/{id}` endpoint returns a valid presigned URL either way, but
+   the browser loads that URL *directly* from R2 (bypassing our backend, by
+   design - see `app/files.py`'s module docstring), and R2 buckets have no
+   CORS policy by default. Without one, the browser silently blocks the
+   response (Chrome: `net::ERR_BLOCKED_BY_ORB`) - every uploaded photo
+   renders as nothing, every file attachment fails to open, with no error
+   surfaced anywhere in our own logs since our server was never involved in
+   that failing request. Add:
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://your-frontend.vercel.app"],
+       "AllowedMethods": ["GET", "HEAD"],
+       "AllowedHeaders": ["*"],
+       "MaxAgeSeconds": 3600
+     }
+   ]
+   ```
+   replacing the origin with your actual deployed frontend URL (add more
+   entries to the array for a custom domain or preview deployments).
 
-(AWS S3 works too if you'd rather use that — same four values, leave the endpoint blank, use a real region like `us-east-1` instead of `auto`.)
+(AWS S3 works too if you'd rather use that — same four values, leave the endpoint blank, use a real region like `us-east-1` instead of `auto`; S3 buckets need the equivalent CORS configuration too, same reasoning as step 4 above.)
 
 ## 3. Deploy the Render blueprint
 

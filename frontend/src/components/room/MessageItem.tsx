@@ -46,6 +46,42 @@ function ReactionPicker({ onPick, onClose }: { onPick: (emoji: string) => void; 
   );
 }
 
+// Only matches explicit http(s) URLs - never bare "javascript:" or other
+// schemes, so there's no way user-typed text can produce a dangerous href.
+const URL_PATTERN = /(https?:\/\/[^\s<]+)/g;
+// Trailing characters that are almost always sentence punctuation rather
+// than part of the URL itself (e.g. "check this out: https://x.com." or
+// "(see https://x.com)") - stripped from the link, rendered as plain text
+// right after it so the sentence still reads correctly.
+const TRAILING_PUNCTUATION = /[.,;:!?'")\]]+$/;
+
+function Linkified({ text }: { text: string }) {
+  const parts = text.split(URL_PATTERN);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (i % 2 === 0) return part;
+        const trailingMatch = part.match(TRAILING_PUNCTUATION);
+        const trailing = trailingMatch ? trailingMatch[0] : "";
+        const url = trailing ? part.slice(0, -trailing.length) : part;
+        return (
+          <span key={i}>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all text-accent underline hover:no-underline"
+            >
+              {url}
+            </a>
+            {trailing}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -70,6 +106,11 @@ function formatSize(bytes: number): string {
 
 const AUDIO_EXT = /\.(webm|mp3|wav|ogg|m4a)$/i;
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
+// PDFs are the one non-image/audio type browsers can render natively -
+// everything else in ALLOWED_FILE_EXTENSIONS (doc/docx/txt/odt/zip) has
+// no browser-native viewer and would just download regardless, so only
+// PDFs get the "open" treatment instead of a forced download.
+const PDF_EXT = /\.pdf$/i;
 
 function FileMessage({ msg, token }: { msg: MessageOut; token: string }) {
   const [info, setInfo] = useState<DownloadResponse | null>(null);
@@ -118,10 +159,11 @@ function FileMessage({ msg, token }: { msg: MessageOut; token: string }) {
     );
   }
 
+  const isPdf = PDF_EXT.test(info.filename);
   return (
     <a
       href={info.url}
-      download={info.filename}
+      download={isPdf ? undefined : info.filename}
       target="_blank"
       rel="noreferrer"
       className="mt-1 inline-flex max-w-xs items-center gap-2.5 rounded-[var(--radius-md)] border border-border bg-surface-muted px-3 py-2 transition-colors hover:bg-sidebar-hover"
@@ -129,7 +171,9 @@ function FileMessage({ msg, token }: { msg: MessageOut; token: string }) {
       <FileText size={18} className="shrink-0 text-muted" />
       <span className="flex min-w-0 flex-col">
         <span className="truncate text-[13px] font-medium text-foreground">{info.filename}</span>
-        <span className="text-[11px] text-muted">{formatSize(info.size)}</span>
+        <span className="text-[11px] text-muted">
+          {formatSize(info.size)} · {isPdf ? "Opens in a new tab" : "Downloads"}
+        </span>
       </span>
     </a>
   );
@@ -208,7 +252,7 @@ export function MessageItem({
           <FileMessage msg={msg} token={token} />
         ) : (
           <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-foreground">
-            {msg.text}
+            <Linkified text={msg.text ?? ""} />
           </p>
         )}
         {msg.reactions.length > 0 && (
