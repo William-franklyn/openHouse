@@ -16,6 +16,7 @@ services:
         sync: false
       - key: REDIS_URL
         fromService:
+          type: keyvalue
           name: openhouse-redis
           property: connectionString
       - key: ADMIN_TOKEN
