@@ -1,12 +1,28 @@
 """Room lifecycle: creation, codes, settings, deletion, owner recovery."""
 
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 from app import metrics, security
 from app.errors import DomainError
-from app.models import CardGame, Channel, FileAsset, Game, Invite, Member, Message, PartyGame, Room, new_id, to_naive_utc, utcnow
+from app.models import (
+    CardGame,
+    Channel,
+    FileAsset,
+    Game,
+    Invite,
+    Member,
+    Message,
+    MessageReaction,
+    PartyGame,
+    Pin,
+    Room,
+    new_id,
+    to_naive_utc,
+    utcnow,
+)
 
 
 async def _unique_code(session, settings) -> str:
@@ -169,18 +185,42 @@ async def rotate_code(session, settings, room: Room) -> str:
 
 
 async def delete_room(session, storage, room: Room) -> None:
-    """Hard-deletes messages/files/invites/pins now (see SPEC.md Decisions:
-    the spec's 24h grace window needs a background scheduler we're not
-    building for this pass, so cleanup is immediate instead)."""
+    """Hard-deletes everything the room owns right now (see SPEC.md
+    Decisions: the spec's 24h grace window needs a background scheduler,
+    which felt disproportionate for an MVP pass, so cleanup is immediate
+    instead). The Room row itself is soft-deleted (deleted_at set, row
+    kept) rather than hard-deleted, so it still exists for metrics/
+    history and so its code can't collide with a brand new room.
+
+    Deletion order matters - children before the parents they reference,
+    so this never trips a foreign key constraint on a real Postgres
+    database (sqlite in tests is lax about this and wouldn't have caught
+    it, which is exactly how Pin/MessageReaction cleanup went missing
+    here for a while): MessageReaction and Pin both reference Message,
+    so both must go before the bulk Message delete; Channel references
+    Room, so it goes after everything that references *it* (Message).
+    Reports are deliberately left alone - they're a moderation audit
+    trail (who reported whom, and why), and that needs to survive the
+    room it was filed against being deleted, not disappear the moment
+    someone deletes the evidence."""
     room.deleted_at = utcnow()
 
     channel_ids = [
         c.id for c in (await session.execute(select(Channel).where(Channel.room_id == room.id))).scalars()
     ]
     if channel_ids:
+        message_ids = list(
+            (await session.execute(select(Message.id).where(Message.channel_id.in_(channel_ids)))).scalars()
+        )
+        if message_ids:
+            await session.execute(
+                MessageReaction.__table__.delete().where(MessageReaction.message_id.in_(message_ids))
+            )
+            await session.execute(Pin.__table__.delete().where(Pin.message_id.in_(message_ids)))
         await session.execute(
             Message.__table__.delete().where(Message.channel_id.in_(channel_ids))
         )
+        await session.execute(Channel.__table__.delete().where(Channel.id.in_(channel_ids)))
 
     files_result = await session.execute(select(FileAsset).where(FileAsset.room_id == room.id))
     for f in files_result.scalars().all():
@@ -191,8 +231,72 @@ async def delete_room(session, storage, room: Room) -> None:
     await session.execute(Game.__table__.delete().where(Game.room_id == room.id))
     await session.execute(PartyGame.__table__.delete().where(PartyGame.room_id == room.id))
     await session.execute(CardGame.__table__.delete().where(CardGame.room_id == room.id))
+    await session.execute(Member.__table__.delete().where(Member.room_id == room.id))
 
     await session.commit()
+
+
+async def find_dormant_room_ids(session, threshold_days: int) -> list[str]:
+    """Rooms with no message activity and nobody seen for threshold_days -
+    a room is dormant once ALL of: it was created more than threshold_days
+    ago (so a brand new empty room gets a grace period), its most recent
+    message (if any) is older than that, and its most recently active
+    member (if any, by last_seen_at falling back to their own created_at
+    for a member who's never reconnected since joining) is also older
+    than that. Any one of those being recent keeps the room alive."""
+    cutoff = utcnow() - timedelta(days=threshold_days)
+
+    last_message_at = (
+        select(Channel.room_id.label("room_id"), func.max(Message.created_at).label("at"))
+        .join(Message, Message.channel_id == Channel.id)
+        .group_by(Channel.room_id)
+        .subquery()
+    )
+    last_member_at = (
+        select(
+            Member.room_id.label("room_id"),
+            func.max(func.coalesce(Member.last_seen_at, Member.created_at)).label("at"),
+        )
+        .group_by(Member.room_id)
+        .subquery()
+    )
+
+    query = (
+        select(Room.id)
+        .outerjoin(last_message_at, last_message_at.c.room_id == Room.id)
+        .outerjoin(last_member_at, last_member_at.c.room_id == Room.id)
+        .where(
+            Room.deleted_at.is_(None),
+            Room.created_at < cutoff,
+            or_(last_message_at.c.at.is_(None), last_message_at.c.at < cutoff),
+            or_(last_member_at.c.at.is_(None), last_member_at.c.at < cutoff),
+        )
+    )
+    result = await session.execute(query)
+    return [row[0] for row in result.all()]
+
+
+async def run_dormant_sweep_loop(db, storage, settings) -> None:
+    """Runs for the lifetime of the process (started from main.py's
+    lifespan, alongside the Hub): every DORMANT_SWEEP_INTERVAL_SECONDS,
+    finds rooms dormant for DORMANT_ROOM_DAYS and deletes each one
+    through the exact same delete_room() an admin's explicit delete
+    uses - one cleanup path, not two that could drift apart. Sleeps
+    first so a slow test suite or a rapid restart loop never fires it
+    immediately on every boot."""
+    while True:
+        await asyncio.sleep(settings.DORMANT_SWEEP_INTERVAL_SECONDS)
+        try:
+            async with db.session() as session:
+                dormant_ids = await find_dormant_room_ids(session, settings.DORMANT_ROOM_DAYS)
+                for room_id in dormant_ids:
+                    room = await session.get(Room, room_id)
+                    if room is not None and room.deleted_at is None:
+                        await delete_room(session, storage, room)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass  # must never let one bad tick kill the sweep loop for good
 
 
 async def transfer_ownership(session, room: Room, old_owner: Member, new_owner: Member) -> None:

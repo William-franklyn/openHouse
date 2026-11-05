@@ -52,7 +52,12 @@ def create_app(
         await db.create_all()
         await asyncio.to_thread(storage.ensure_bucket)
         await hub.start()
+        dormant_sweep_task = asyncio.create_task(
+            rooms_mod.run_dormant_sweep_loop(db, storage, settings)
+        )
         yield
+        dormant_sweep_task.cancel()
+        await asyncio.gather(dormant_sweep_task, return_exceptions=True)
         await hub.stop()
         await db.dispose()
 

@@ -88,6 +88,16 @@ class Settings(BaseSettings):
     # Postgres, not Redis) - only who's currently watching it live is.
     GAME_WATCH_TTL_SECONDS: int = 600
 
+    # ---- Room dormancy sweep ----
+    # A room with no message activity and nobody seen for this many days
+    # gets hard-deleted automatically (same cleanup as an explicit admin
+    # delete) by the background sweep started in main.py's lifespan.
+    DORMANT_ROOM_DAYS: int = 3
+    # How often the sweep checks for dormant rooms - doesn't need to be
+    # anywhere near real-time precision against a multi-day threshold.
+    # Tests override this down to a fraction of a second.
+    DORMANT_SWEEP_INTERVAL_SECONDS: int = 3600
+
     # ---- Rate limits ----
     MESSAGE_RATE_LIMIT: int = 10
     MESSAGE_RATE_WINDOW_SECONDS: int = 10

@@ -1,3 +1,5 @@
+from conftest import register_socket, ws_dispatch
+
 from app.config import Settings
 
 
@@ -346,3 +348,177 @@ async def test_ended_room_by_timer_gives_room_ended_on_join(client, app, monkeyp
     resp = await client.post(f"/api/rooms/{code}/join", json={"name": "Late", "over_18": True})
     assert resp.status_code == 410
     assert resp.json()["code"] == "room_ended"
+
+
+# 4. Deleting a room cleans up everything it owns -----------------------------
+
+async def test_deleting_a_room_removes_pins_reactions_channels_and_members(client, app):
+    from sqlalchemy import select
+
+    from app.models import Channel, Member, MessageReaction, Pin
+
+    data = await create_room(client)
+    room_id, code, owner_token = data["room"]["id"], data["room"]["code"], data["session_token"]
+    owner_id = data["member"]["member_id"]
+
+    join_resp = await client.post(f"/api/rooms/{code}/join", json={"name": "Maria", "over_18": True})
+    maria_id = join_resp.json()["member_id"]
+
+    await register_socket(app, room_id, owner_id)
+    async with app.state.db.session() as session:
+        result = await session.execute(select(Channel).where(Channel.room_id == room_id))
+        channel_id = result.scalars().one().id
+
+    await ws_dispatch(app, room_id, owner_id, "send_message", {"channel_id": channel_id, "text": "hi"})
+    async with app.state.db.session() as session:
+        from app import messages as messages_mod
+
+        message_id = (await messages_mod.history(session, channel_id, None, 10))[0].id
+
+    await ws_dispatch(app, room_id, owner_id, "pin", {"message_id": message_id})
+    await ws_dispatch(app, room_id, owner_id, "toggle_reaction", {"message_id": message_id, "emoji": "👍"})
+
+    # Sanity check everything actually got created before we delete the room.
+    async with app.state.db.session() as session:
+        assert (await session.execute(select(Pin).where(Pin.room_id == room_id))).scalars().all()
+        assert (
+            await session.execute(select(MessageReaction).where(MessageReaction.message_id == message_id))
+        ).scalars().all()
+        assert (await session.execute(select(Channel).where(Channel.room_id == room_id))).scalars().all()
+        assert (await session.execute(select(Member).where(Member.room_id == room_id))).scalars().all()
+
+    delete_resp = await client.delete(f"/api/rooms/{room_id}", headers=auth(owner_token))
+    assert delete_resp.status_code == 200
+
+    async with app.state.db.session() as session:
+        assert (await session.execute(select(Pin).where(Pin.room_id == room_id))).scalars().all() == []
+        assert (
+            await session.execute(select(MessageReaction).where(MessageReaction.message_id == message_id))
+        ).scalars().all() == []
+        assert (await session.execute(select(Channel).where(Channel.room_id == room_id))).scalars().all() == []
+        assert (await session.execute(select(Member).where(Member.room_id == room_id))).scalars().all() == []
+
+
+async def test_deleting_a_room_keeps_reports_for_moderation_history(client, app):
+    from sqlalchemy import select
+
+    from app.models import Report
+
+    data = await create_room(client)
+    room_id, code, owner_token = data["room"]["id"], data["room"]["code"], data["session_token"]
+
+    join_resp = await client.post(f"/api/rooms/{code}/join", json={"name": "Bad Actor", "over_18": True})
+    bad_actor_id = join_resp.json()["member_id"]
+
+    report_resp = await client.post(
+        f"/api/rooms/{room_id}/reports",
+        json={"target_member_id": bad_actor_id, "reason": "being annoying"},
+        headers=auth(owner_token),
+    )
+    assert report_resp.status_code == 200
+
+    await client.delete(f"/api/rooms/{room_id}", headers=auth(owner_token))
+
+    async with app.state.db.session() as session:
+        reports = (await session.execute(select(Report).where(Report.room_id == room_id))).scalars().all()
+        assert len(reports) == 1
+
+
+# 5. Dormant room auto-deletion ------------------------------------------------
+
+async def test_find_dormant_room_ids_only_returns_rooms_with_no_recent_activity(client, app):
+    import datetime as dt
+
+    from app import rooms as rooms_mod
+    from app.models import Member, Room, utcnow
+
+    fresh = await create_room(client, name="Fresh Room")
+    stale = await create_room(client, name="Stale Room")
+
+    old = utcnow() - dt.timedelta(days=10)
+    async with app.state.db.session() as session:
+        stale_room = await session.get(Room, stale["room"]["id"])
+        stale_room.created_at = old
+        member = await session.get(Member, stale["member"]["member_id"])
+        member.last_seen_at = old
+        member.created_at = old
+        await session.commit()
+
+        dormant_ids = await rooms_mod.find_dormant_room_ids(session, threshold_days=3)
+
+    assert stale["room"]["id"] in dormant_ids
+    assert fresh["room"]["id"] not in dormant_ids
+
+
+async def test_a_recent_message_keeps_an_otherwise_old_room_alive(client, app):
+    import datetime as dt
+
+    from sqlalchemy import select
+
+    from app import rooms as rooms_mod
+    from app.models import Channel, Room, utcnow
+
+    data = await create_room(client)
+    room_id, owner_id = data["room"]["id"], data["member"]["member_id"]
+
+    old = utcnow() - dt.timedelta(days=10)
+    async with app.state.db.session() as session:
+        room = await session.get(Room, room_id)
+        room.created_at = old
+        from app.models import Member
+
+        member = await session.get(Member, owner_id)
+        member.last_seen_at = old
+        member.created_at = old
+        await session.commit()
+        result = await session.execute(select(Channel).where(Channel.room_id == room_id))
+        channel_id = result.scalars().one().id
+
+    # A message sent "now" should keep this room off the dormant list even
+    # though the room and its member both look ancient.
+    await register_socket(app, room_id, owner_id)
+    await ws_dispatch(app, room_id, owner_id, "send_message", {"channel_id": channel_id, "text": "still here"})
+
+    async with app.state.db.session() as session:
+        dormant_ids = await rooms_mod.find_dormant_room_ids(session, threshold_days=3)
+    assert room_id not in dormant_ids
+
+
+async def test_dormant_sweep_loop_actually_deletes_a_dormant_room(client, app, monkeypatch):
+    import asyncio
+    import datetime as dt
+
+    from app.models import Member, Room, utcnow
+
+    data = await create_room(client)
+    room_id = data["room"]["id"]
+
+    old = utcnow() - dt.timedelta(days=10)
+    async with app.state.db.session() as session:
+        room = await session.get(Room, room_id)
+        room.created_at = old
+        member = await session.get(Member, data["member"]["member_id"])
+        member.last_seen_at = old
+        member.created_at = old
+        await session.commit()
+
+    app.state.settings.DORMANT_ROOM_DAYS = 3
+    app.state.settings.DORMANT_SWEEP_INTERVAL_SECONDS = 0.05
+
+    from app import rooms as rooms_mod
+
+    task = asyncio.create_task(
+        rooms_mod.run_dormant_sweep_loop(app.state.db, app.state.storage, app.state.settings)
+    )
+    try:
+        for _ in range(50):
+            await asyncio.sleep(0.05)
+            async with app.state.db.session() as session:
+                refreshed = await session.get(Room, room_id)
+                if refreshed.deleted_at is not None:
+                    break
+        else:
+            assert False, "dormant room was never swept"
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
