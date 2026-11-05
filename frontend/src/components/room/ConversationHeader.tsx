@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, Hash, Users, Video, Images, ChessKnight, Music } from "lucide-react";
+import { Menu, Hash, Users, Video, Images, Music } from "lucide-react";
 import { useRoomStore } from "@/lib/store";
 import { Tooltip } from "@/components/ui/Tooltip";
 
@@ -78,7 +78,9 @@ export function ConversationHeader({
             aria-label="Games"
             className="relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-muted"
           >
-            <ChessKnight size={18} />
+            <span className="text-[18px] leading-none" aria-hidden>
+              🎮
+            </span>
             {hasLiveGame && (
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" aria-hidden />
             )}
